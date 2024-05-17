@@ -7,14 +7,15 @@ defmodule Mississippi.Producer.EventsProducer do
     defstruct [
       :channel,
       :events_exchange_name,
-      :data_queue_count,
-      :data_queue_prefix
+      :queue_total_count,
+      :queue_prefix
     ]
   end
 
   use GenServer
 
   alias AMQP.Channel
+  alias Mississippi.Producer.EventsProducer.Options
   require Logger
 
   # TODO should these be customizable?
@@ -30,22 +31,23 @@ defmodule Mississippi.Producer.EventsProducer do
   @doc """
   Publish a message on Mississippi AMQP queues. The call is blocking, as only one message at a time can be published.
   """
-  @type publish_opts :: [{:sharding_key, term()}] | [{:sharding_key, term()}, {:headers, list()}]
+  @type publish_opts() :: [unquote(NimbleOptions.option_typespec(Options.publish_opts()))]
   @spec publish(
           payload :: binary(),
           opts :: publish_opts()
         ) :: :ok | {:error, reason :: :blocked | :closing}
-  def publish(payload, opts \\ []) do
-    GenServer.call(__MODULE__, {:publish, payload, opts})
+  def publish(payload, opts) do
+    valid_opts = NimbleOptions.validate!(opts, Options.publish_opts())
+    GenServer.call(__MODULE__, {:publish, payload, valid_opts})
   end
 
   # Server callbacks
 
   @impl true
-  def init(queues_config: queues_config) do
-    events_exchange_name = Keyword.fetch!(queues_config, :events_exchange_name)
-    data_queue_count = Keyword.fetch!(queues_config, :data_queue_count)
-    data_queue_prefix = Keyword.fetch!(queues_config, :data_queue_prefix)
+  def init(init_opts) do
+    events_exchange_name = init_opts[:events_exchange_name]
+    queue_count = init_opts[:total_count]
+    queue_prefix = init_opts[:prefix]
 
     case init_producer(events_exchange_name) do
       {:ok, channel} ->
@@ -53,8 +55,8 @@ defmodule Mississippi.Producer.EventsProducer do
          %State{
            channel: channel,
            events_exchange_name: events_exchange_name,
-           data_queue_count: data_queue_count,
-           data_queue_prefix: data_queue_prefix
+           queue_total_count: queue_count,
+           queue_prefix: queue_prefix
          }}
 
       {:error, reason} ->
@@ -69,8 +71,8 @@ defmodule Mississippi.Producer.EventsProducer do
     %State{
       channel: channel,
       events_exchange_name: events_exchange_name,
-      data_queue_count: data_queue_count,
-      data_queue_prefix: data_queue_prefix
+      queue_total_count: queue_count,
+      queue_prefix: queue_prefix
     } = state
 
     headers =
@@ -84,11 +86,11 @@ defmodule Mississippi.Producer.EventsProducer do
       |> Keyword.put(:persistent, true)
       |> Keyword.put(:mandatory, true)
       |> Keyword.put(:headers, headers)
-      |> Keyword.put(:message_id, generate_message_id())
-      |> Keyword.put(:timestamp, DateTime.utc_now() |> DateTime.to_unix())
+      |> Keyword.put_new(:message_id, generate_message_id())
+      |> Keyword.put_new(:timestamp, DateTime.utc_now() |> DateTime.to_unix())
 
-    queue_index = :erlang.phash2(sharding_key, data_queue_count)
-    queue_name = "#{data_queue_prefix}#{queue_index}"
+    queue_index = :erlang.phash2(sharding_key, queue_count)
+    queue_name = "#{queue_prefix}#{queue_index}"
     # TODO should the producer really declare the queue? Nvm for now, it's idempotent
     {:ok, _} = @adapter.declare_queue(channel, queue_name, durable: true)
     res = @adapter.publish(channel, events_exchange_name, queue_name, payload, full_opts)
