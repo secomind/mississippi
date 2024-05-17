@@ -4,6 +4,7 @@ defmodule Mississippi.Producer do
   """
 
   alias Mississippi.Producer.EventsProducer
+  alias Mississippi.Producer.Options
 
   # Automatically defines child_spec/1
   use Supervisor
@@ -24,14 +25,14 @@ defmodule Mississippi.Producer do
           | {:ssl_options, ssl_options}
           | {:channels, integer()}
 
-  @type mississippi_queues_config ::
+  @type mississippi_config ::
           {:events_exchange_name, String.t()}
           | {:data_queue_count, pos_integer()}
           | {:data_queue_prefix, String.t()}
 
   @type init_options :: [
           {:amqp_producer_options, amqp_options()}
-          | {:mississippi_queues_config, mississippi_queues_config()}
+          | {:mississippi_config, mississippi_config()}
           | {:events_producer_connection_number, pos_integer()}
         ]
 
@@ -41,21 +42,18 @@ defmodule Mississippi.Producer do
   end
 
   @impl true
-  def init(init_arg) do
-    amqp_producer_options = Keyword.fetch!(init_arg, :amqp_producer_options)
+  def init(init_opts) do
+    opts = NimbleOptions.validate!(init_opts, Options.definition())
 
     # TODO: `events_producer_connection_number` should be automatically computed based on
-    # `data_queue_count` + `channels_per_connections` (this one will arrive soon).
-    events_producer_connection_number =
-      Keyword.fetch!(init_arg, :events_producer_connection_number)
-
-    events_producer_config = Keyword.fetch!(init_arg, :mississippi_queues_config)
+    # `data_queue_count` + `channels_per_connection` (this one will arrive soon).
+    events_producer_connection_number = opts[:events_producer_connection_number]
 
     children = [
       {ExRabbitPool.PoolSupervisor,
-       rabbitmq_config: amqp_producer_options,
+       rabbitmq_config: opts[:amqp_producer_options],
        connection_pools: [events_producer_pool_config(events_producer_connection_number)]},
-      {EventsProducer, queues_config: events_producer_config}
+      {EventsProducer, opts[:mississippi_config]}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

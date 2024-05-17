@@ -15,6 +15,7 @@ defmodule Mississippi.Producer.EventsProducer do
   use GenServer
 
   alias AMQP.Channel
+  alias Mississippi.Producer.EventsProducer.Options
   require Logger
 
   # TODO should these be customizable?
@@ -35,17 +36,18 @@ defmodule Mississippi.Producer.EventsProducer do
           payload :: binary(),
           opts :: publish_opts()
         ) :: :ok | {:error, reason :: :blocked | :closing}
-  def publish(payload, opts \\ []) do
-    GenServer.call(__MODULE__, {:publish, payload, opts})
+  def publish(payload, opts) do
+    valid_opts = NimbleOptions.validate!(opts, Options.publish_opts())
+    GenServer.call(__MODULE__, {:publish, payload, valid_opts})
   end
 
   # Server callbacks
 
   @impl true
-  def init(queues_config: queues_config) do
-    events_exchange_name = Keyword.fetch!(queues_config, :events_exchange_name)
-    data_queue_count = Keyword.fetch!(queues_config, :data_queue_count)
-    data_queue_prefix = Keyword.fetch!(queues_config, :data_queue_prefix)
+  def init(init_opts) do
+    events_exchange_name = init_opts[:events_exchange_name]
+    data_queue_count = init_opts[:data_queue_count]
+    data_queue_prefix = init_opts[:data_queue_prefix]
 
     case init_producer(events_exchange_name) do
       {:ok, channel} ->
