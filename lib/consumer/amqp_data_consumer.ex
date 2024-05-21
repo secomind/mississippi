@@ -103,14 +103,16 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
     {:reply, res, state}
   end
 
-  def handle_call({:start_message_tracker, realm, device_id}, _from, state) do
-    res = DataUpdater.get_message_tracker(realm, device_id)
+  # TODO this was (seemed to be) unused
+  def handle_call({:start_message_tracker, sharding_key}, _from, state) do
+    res = DataUpdater.get_message_tracker(sharding_key)
     {:reply, res, state}
   end
 
-  def handle_call({:start_data_updater, realm, device_id, message_tracker}, _from, state) do
+  # TODO this was (seemed to be) unused
+  def handle_call({:start_data_updater, sharding_key, message_tracker}, _from, state) do
     %State{message_handler: message_handler} = state
-    res = DataUpdater.get_data_updater_process(realm, device_id, message_tracker, message_handler)
+    res = DataUpdater.get_data_updater_process(sharding_key, message_tracker, message_handler)
     {:reply, res, state}
   end
 
