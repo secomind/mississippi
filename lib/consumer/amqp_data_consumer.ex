@@ -69,9 +69,9 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   @impl true
   def init(args) do
     queue_name = Keyword.fetch!(args, :queue_name)
-    queue_range_start = Keyword.fetch!(args, :data_queue_range_start)
-    queue_range_end = Keyword.fetch!(args, :data_queue_range_end)
-    queue_total_count = Keyword.fetch!(args, :data_queue_total_count)
+    queue_range_start = Keyword.fetch!(args, :range_start)
+    queue_range_end = Keyword.fetch!(args, :range_end)
+    queue_count = Keyword.fetch!(args, :queue_total_count)
     message_handler = Keyword.fetch!(args, :message_handler)
 
     state = %State{
@@ -125,7 +125,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
     # TODO refactor: bring out the algorithm
     # This is the same sharding algorithm used in producer
     # Make sure they stay in sync
-    queue_index = :erlang.phash2(sharding_key, queue_total_count)
+    queue_index = :erlang.phash2(sharding_key, queue_count)
 
     if queue_index in queue_range do
       {:reply, {:ok, get_queue_via_tuple(queue_index)}, state}

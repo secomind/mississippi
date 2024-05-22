@@ -2,54 +2,63 @@ defmodule Mississippi.Consumer do
   @moduledoc """
   This module defines the supervision tree of Mississippi.Consumer.
   """
+
+  alias Mississippi.Consumer.ConsumersSupervisor
+  alias Mississippi.Consumer.Options
   use Supervisor
+  require Logger
 
-  @type ssl_option ::
-          {:cacertfile, String.t()}
-          | {:verify, :verify_peer}
-          | {:server_name_indication, charlist() | :disable}
-          | {:depth, integer()}
-  @type ssl_options :: :none | [ssl_option]
+  @type init_options() :: [unquote(NimbleOptions.option_typespec(Options.definition()))]
 
-  @type amqp_options ::
-          {:username, String.t()}
-          | {:password, String.t()}
-          | {:virtual_host, String.t()}
-          | {:host, String.t()}
-          | {:port, integer()}
-          | {:ssl_options, ssl_options}
-          | {:channels, integer()}
-
-  @type mississippi_queues_config ::
-          {:events_exchange_name, String.t()}
-          | {:data_queue_range_start, non_neg_integer()}
-          | {:data_queue_range_end, pos_integer()}
-          | {:data_queue_total_count, pos_integer()}
-          | {:data_queue_prefix, String.t()}
-
-  @type init_options :: [
-          {:amqp_consumer_options, amqp_options()}
-          | {:mississippi_queues_config, mississippi_queues_config()}
-          | {:events_consumer_connection_number, pos_integer()}
-          | {:message_handler, module()}
-        ]
-
-  @spec start_link(init_options()) :: Supervisor.on_start()
-  def start_link(init_arg) do
-    Supervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
+  def start_link(init_opts) do
+    Supervisor.start_link(__MODULE__, init_opts, name: __MODULE__)
   end
 
   @impl true
-  def init(init_arg) do
-    # TODO: `events_consumer_connection_number` should be automatically computed based on
-    # `data_queue_range_start` and `data_queue_range_end` + `channels_per_connections` (this one will arrive soon).
+  def init(init_opts) do
+    opts = NimbleOptions.validate!(init_opts, Options.definition())
+
+    amqp_consumer_options = opts[:amqp_consumer_options]
+
+    queue_config = opts[:mississippi_config][:queues]
+
+    message_handler = opts[:mississippi_config][:message_handler]
+
+    channels_per_connection = amqp_consumer_options[:channels]
+
+    queue_count = queue_config[:range_end] - queue_config[:range_start] + 1
+
+    # Invariant: we use one channel for one queue.
+    connection_number = Kernel.ceil(queue_count / channels_per_connection)
+
+    _ =
+      Logger.debug(
+        "Have #{queue_count} queues and #{channels_per_connection} channels per connection"
+      )
+
+    _ =
+      Logger.debug(
+        "Have #{connection_number} connections and a total of #{connection_number * channels_per_connection} channels"
+      )
+
     children = [
-      {Mississippi.Consumer.DataPipelineSupervisor, init_arg}
+      {Registry, [keys: :unique, name: Registry.MessageTracker]},
+      {Registry, [keys: :unique, name: Registry.DataUpdater]},
+      {ExRabbitPool.PoolSupervisor,
+       rabbitmq_config: amqp_consumer_options,
+       connection_pools: [events_consumer_pool_config(connection_number)]},
+      {ConsumersSupervisor, queue_config: queue_config, message_handler: message_handler}
     ]
 
-    # See https://hexdocs.pm/elixir/Supervisor.html
-    # for other strategies and supported options
-    opts = [strategy: :one_for_one, name: Mississippi.Consumer.Supervisor]
-    Supervisor.init(children, opts)
+    Supervisor.init(children, strategy: :rest_for_one)
+  end
+
+  defp events_consumer_pool_config(connection_number) do
+    [
+      name: {:local, :events_consumer_pool},
+      worker_module: ExRabbitPool.Worker.RabbitConnection,
+      size: connection_number,
+      max_overflow: 0
+    ]
   end
 end
