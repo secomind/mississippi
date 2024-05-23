@@ -248,8 +248,9 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   end
 
   defp handle_consume(payload, headers, timestamp, meta, message_handler) do
-    with %{@sharding_key => sharding_key} <- headers,
+    with %{@sharding_key => sharding_key_binary} <- headers,
          {:ok, tracking_id} <- get_tracking_id(meta) do
+      sharding_key = :erlang.binary_to_term(sharding_key_binary)
       # This call might spawn processes and implicitly monitor them
       DataUpdater.handle_message(
         sharding_key,
