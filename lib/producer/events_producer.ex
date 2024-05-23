@@ -77,7 +77,7 @@ defmodule Mississippi.Producer.EventsProducer do
 
     headers =
       Keyword.get(opts, :headers, [])
-      |> Keyword.put(:sharding_key, sharding_key)
+      |> Keyword.put(:sharding_key, :erlang.term_to_binary(sharding_key))
 
     # TODO: handle basic.return
     full_opts =
