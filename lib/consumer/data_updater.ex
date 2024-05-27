@@ -15,7 +15,7 @@ defmodule Mississippi.Consumer.DataUpdater do
   require Logger
 
   # TODO make this configurable?
-  @data_updater_deactivation_interval_ms 10_000
+  @data_updater_deactivation_interval_ms 60 * 60 * 1_000 * 3
 
   @doc """
   Start handling a message. If it is the first in-order message, it will be processed
