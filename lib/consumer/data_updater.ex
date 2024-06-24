@@ -3,7 +3,8 @@ defmodule Mississippi.Consumer.DataUpdater do
     defstruct [
       :sharding_key,
       :message_tracker,
-      :message_handler
+      :message_handler,
+      :handler_state
     ]
   end
 
@@ -14,7 +15,7 @@ defmodule Mississippi.Consumer.DataUpdater do
   require Logger
 
   # TODO make this configurable?
-  @data_updater_deactivation_interval_ms 10_000
+  @data_updater_deactivation_interval_ms 60 * 60 * 1_000 * 3
 
   @doc """
   Start handling a message. If it is the first in-order message, it will be processed
@@ -99,34 +100,46 @@ defmodule Mississippi.Consumer.DataUpdater do
     MessageTracker.register_data_updater(message_tracker)
     Process.monitor(message_tracker)
 
-    state = %State{
-      sharding_key: sharding_key,
-      message_tracker: message_tracker,
-      message_handler: message_handler
-    }
+    with {:ok, handler_state} <- message_handler.init(sharding_key) do
+      state = %State{
+        sharding_key: sharding_key,
+        message_tracker: message_tracker,
+        message_handler: message_handler,
+        handler_state: handler_state
+      }
 
-    {:ok, state, @data_updater_deactivation_interval_ms}
+      {:ok, state, @data_updater_deactivation_interval_ms}
+    end
   end
 
   @impl true
   def handle_cast({:handle_message, payload, headers, message_id, timestamp}, state) do
     if MessageTracker.can_process_message(state.message_tracker, message_id) do
-      case state.message_handler.handle_message(payload, headers, message_id, timestamp) do
-        {:ok, _} ->
+      case state.message_handler.handle_message(
+             payload,
+             headers,
+             message_id,
+             timestamp,
+             state.handler_state
+           ) do
+        {:ok, _, new_handler_state} ->
           _ = Logger.debug("Successfully handled message #{inspect(message_id)}")
           MessageTracker.ack_delivery(state.message_tracker, message_id)
 
-        {:error, reason} ->
+          new_state = %State{state | handler_state: new_handler_state}
+
+          {:noreply, new_state, @data_updater_deactivation_interval_ms}
+
+        {:error, reason, _state} ->
           _ =
             Logger.warning(
               "Error handling message #{inspect(message_id)}, reason #{inspect(reason)}"
             )
 
           MessageTracker.discard(state.message_tracker, message_id)
+          {:noreply, state, @data_updater_deactivation_interval_ms}
       end
     end
-
-    {:noreply, state, @data_updater_deactivation_interval_ms}
   end
 
   @impl true
@@ -150,6 +163,13 @@ defmodule Mississippi.Consumer.DataUpdater do
     :ok = MessageTracker.deactivate(state.message_tracker)
 
     {:stop, :normal, state}
+  end
+
+  @impl true
+  def terminate(reason, state) do
+    %State{message_handler: message_handler, handler_state: handler_state} = state
+    message_handler.terminate(reason, handler_state)
+    :ok
   end
 
   defp spawn_message_tracker(acknowledger, sharding_key) do

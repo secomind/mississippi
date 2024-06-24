@@ -69,9 +69,9 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   @impl true
   def init(args) do
     queue_name = Keyword.fetch!(args, :queue_name)
-    queue_range_start = Keyword.fetch!(args, :data_queue_range_start)
-    queue_range_end = Keyword.fetch!(args, :data_queue_range_end)
-    queue_total_count = Keyword.fetch!(args, :data_queue_total_count)
+    queue_range_start = Keyword.fetch!(args, :range_start)
+    queue_range_end = Keyword.fetch!(args, :range_end)
+    queue_count = Keyword.fetch!(args, :queue_total_count)
     message_handler = Keyword.fetch!(args, :message_handler)
 
     state = %State{
@@ -103,14 +103,16 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
     {:reply, res, state}
   end
 
-  def handle_call({:start_message_tracker, realm, device_id}, _from, state) do
-    res = DataUpdater.get_message_tracker(realm, device_id)
+  # TODO this was (seemed to be) unused
+  def handle_call({:start_message_tracker, sharding_key}, _from, state) do
+    res = DataUpdater.get_message_tracker(sharding_key)
     {:reply, res, state}
   end
 
-  def handle_call({:start_data_updater, realm, device_id, message_tracker}, _from, state) do
+  # TODO this was (seemed to be) unused
+  def handle_call({:start_data_updater, sharding_key, message_tracker}, _from, state) do
     %State{message_handler: message_handler} = state
-    res = DataUpdater.get_data_updater_process(realm, device_id, message_tracker, message_handler)
+    res = DataUpdater.get_data_updater_process(sharding_key, message_tracker, message_handler)
     {:reply, res, state}
   end
 
@@ -123,7 +125,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
     # TODO refactor: bring out the algorithm
     # This is the same sharding algorithm used in producer
     # Make sure they stay in sync
-    queue_index = :erlang.phash2(sharding_key, queue_total_count)
+    queue_index = :erlang.phash2(sharding_key, queue_count)
 
     if queue_index in queue_range do
       {:reply, {:ok, get_queue_via_tuple(queue_index)}, state}
@@ -246,8 +248,9 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   end
 
   defp handle_consume(payload, headers, timestamp, meta, message_handler) do
-    with %{@sharding_key => sharding_key} <- headers,
+    with %{@sharding_key => sharding_key_binary} <- headers,
          {:ok, tracking_id} <- get_tracking_id(meta) do
+      sharding_key = :erlang.binary_to_term(sharding_key_binary)
       # This call might spawn processes and implicitly monitor them
       DataUpdater.handle_message(
         sharding_key,
