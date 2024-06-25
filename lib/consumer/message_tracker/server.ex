@@ -8,8 +8,14 @@ defmodule Mississippi.Consumer.MessageTracker.Server do
 
   # TODO: this should probably be a :gen_statem so we can simplify state data
 
-  def init(args) do
-    acknowledger = Keyword.fetch!(args, :acknowledger)
+  def start_link(args) do
+    name = Keyword.fetch!(args, :name)
+    _ = Logger.info("Starting MessageTracker #{inspect(name)}", tag: "message_tracker_start")
+    GenServer.start_link(__MODULE__, args, name: name)
+  end
+
+  def init(init_args) do
+    acknowledger = Keyword.fetch!(init_args, :acknowledger)
     {:ok, {:new, :queue.new(), %{}, acknowledger}}
   end
 
