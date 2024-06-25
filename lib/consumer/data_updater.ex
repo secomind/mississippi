@@ -10,8 +10,8 @@ defmodule Mississippi.Consumer.DataUpdater do
 
   use GenServer
 
-  alias Mississippi.Consumer.AMQPDataConsumer
   alias Mississippi.Consumer.MessageTracker
+  alias Mississippi.Consumer.DataUpdater
   require Logger
 
   # TODO make this configurable?
@@ -19,11 +19,12 @@ defmodule Mississippi.Consumer.DataUpdater do
 
   @doc """
   Start handling a message. If it is the first in-order message, it will be processed
-  straight away by the `message_handler` (which is a module implementing DataUpdater.Handler behaviour).
+  straight away by the `message_handler` provided in the mississippi config
+  (which is a module implementing DataUpdater.Handler behaviour).
   If not, the message will remain in memory until it can be processed, i.e. it is now the first
   in-order message.
   """
-  def handle_message(sharding_key, payload, headers, tracking_id, timestamp, message_handler) do
+  def handle_message(sharding_key, payload, headers, tracking_id, timestamp) do
     message_tracker = get_message_tracker(sharding_key)
     {message_id, delivery_tag} = tracking_id
     MessageTracker.track_delivery(message_tracker, message_id, delivery_tag)
