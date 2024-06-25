@@ -26,7 +26,15 @@ defmodule Mississippi.Consumer.DataUpdater.Handler do
               timestamp :: term(),
               state :: handler_state
             ) ::
-              {:ok, result :: term(), state :: handler_state} | {:error, reason :: term()}
+              {:ok, result :: term(), new_state :: handler_state} | {:error, reason :: term()}
+
+  @doc """
+  Invoked when an information that is not a message is received.
+  Used to update the state of a stateful handler.
+  There is no guarantee of ordering.
+  """
+  @callback handle_signal(signal :: term(), state :: handler_state) ::
+              {result :: term(), new_state :: handler_state}
 
   @doc """
   Invoked when the handler is being terminated. It can be used to perform cleanup tasks before closing.

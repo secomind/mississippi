@@ -33,6 +33,18 @@ defmodule Mississippi.Consumer.DataUpdater do
   end
 
   @doc """
+  Handles an information that must be forwarded to an Handler process,
+  but is not a Mississippi message. Used to change the state of
+  a stateful Handler. The call is blocking and there is no ordering guarantee.
+  """
+  def handle_signal(sharding_key, signal, message_handler) do
+    message_tracker = get_message_tracker(sharding_key)
+
+    get_data_updater_process(sharding_key, message_tracker, message_handler)
+    |> GenServer.call({:handle_signal, signal})
+  end
+
+  @doc """
   Provides a reference to the DataUpdater process that will handle the set of messages identified by
   the given sharding key. Messages going through the DataUpdater process will be tracked by the
   `message_tracker` and the `message_handler` will be used to process them.
@@ -110,6 +122,16 @@ defmodule Mississippi.Consumer.DataUpdater do
 
       {:ok, state, @data_updater_deactivation_interval_ms}
     end
+  end
+
+  @impl true
+  def handle_call({:handle_signal, signal}, _from, state) do
+    {return_value, new_handler_state} =
+      state.message_handler.handle_signal(signal, state.handler_state)
+
+    new_state = %State{state | handler_state: new_handler_state}
+
+    {:reply, return_value, new_state, @data_updater_deactivation_interval_ms}
   end
 
   @impl true

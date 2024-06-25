@@ -17,6 +17,13 @@ defmodule Mississippi.Consumer.DataUpdater.Handler.Impl do
   end
 
   @impl true
+  def handle_signal(signal, state) do
+    IO.puts("Received signal #{inspect(signal)}")
+
+    {:ok, state}
+  end
+
+  @impl true
   def terminate(reason, state) do
     IO.puts("Terminating on #{inspect(reason)}, state: #{inspect(state)}")
     :ok
