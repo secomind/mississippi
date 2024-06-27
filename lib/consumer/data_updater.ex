@@ -83,7 +83,8 @@ defmodule Mississippi.Consumer.DataUpdater do
     # TODO bring back :offload_start (?)
     case DynamicSupervisor.start_child(
            MessageTracker.Supervisor,
-           {MessageTracker.Server, name: name, acknowledger: acknowledger}
+           {MessageTracker.Server,
+            name: name, acknowledger: acknowledger, sharding_key: sharding_key}
          ) do
       {:ok, pid} ->
         pid
