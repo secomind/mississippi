@@ -42,12 +42,10 @@ defmodule Mississippi.Consumer do
       )
 
     children = [
-      {Registry, [keys: :unique, name: Registry.MessageTracker]},
-      {Registry, [keys: :unique, name: Registry.DataUpdater]},
       {ExRabbitPool.PoolSupervisor,
        rabbitmq_config: amqp_consumer_options,
        connection_pools: [events_consumer_pool_config(connection_number)]},
-      {ConsumersSupervisor, queue_config: queue_config, message_handler: message_handler}
+      {ConsumersSupervisor, queues: queue_config, message_handler: message_handler}
     ]
 
     Supervisor.init(children, strategy: :rest_for_one)

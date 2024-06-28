@@ -3,12 +3,6 @@ defmodule Mississippi.Consumer.MessageTracker do
   The MessageTracker process guarantees that messages sharing the same sharding key
   are processed in (chronological) order.
   """
-  alias Mississippi.Consumer.MessageTracker.Server
-
-  def start_link(args) do
-    name = Keyword.fetch!(args, :name)
-    GenServer.start_link(Server, args, name: name)
-  end
 
   @doc """
   Start tracking a message. This call is not blocking.

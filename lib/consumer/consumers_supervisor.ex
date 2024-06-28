@@ -2,17 +2,27 @@ defmodule Mississippi.Consumer.ConsumersSupervisor do
   use Supervisor
   require Logger
 
+  alias Mississippi.Consumer
+
   def start_link(init_arg) do
     Supervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
   end
 
   @impl true
   def init(init_arg) do
-    Logger.info("AMQPDataConsumer supervisor init.", tag: "data_consumer_sup_init")
+    Logger.info("ConsumersSupervisor init.", tag: "consumer_sup_init")
+
+    message_handler = init_arg[:message_handler]
+
+    queues_config = init_arg[:queues]
 
     children = [
+      {Registry, [keys: :unique, name: Registry.DataUpdater]},
+      {Registry, [keys: :unique, name: Registry.MessageTracker]},
       {Registry, [keys: :unique, name: Registry.AMQPDataConsumer]},
-      {Mississippi.Consumer.AMQPDataConsumer.Supervisor, init_arg}
+      {Consumer.DataUpdater.Supervisor, message_handler: message_handler},
+      {DynamicSupervisor, strategy: :one_for_one, name: Consumer.MessageTracker.Supervisor},
+      {Consumer.AMQPDataConsumer.Supervisor, queues_config: queues_config}
     ]
 
     opts = [strategy: :rest_for_one, name: __MODULE__]

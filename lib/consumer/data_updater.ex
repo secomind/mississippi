@@ -10,8 +10,8 @@ defmodule Mississippi.Consumer.DataUpdater do
 
   use GenServer
 
-  alias Mississippi.Consumer.AMQPDataConsumer
   alias Mississippi.Consumer.MessageTracker
+  alias Mississippi.Consumer.DataUpdater
   require Logger
 
   # TODO make this configurable?
@@ -19,16 +19,17 @@ defmodule Mississippi.Consumer.DataUpdater do
 
   @doc """
   Start handling a message. If it is the first in-order message, it will be processed
-  straight away by the `message_handler` (which is a module implementing DataUpdater.Handler behaviour).
+  straight away by the `message_handler` provided in the mississippi config
+  (which is a module implementing DataUpdater.Handler behaviour).
   If not, the message will remain in memory until it can be processed, i.e. it is now the first
   in-order message.
   """
-  def handle_message(sharding_key, payload, headers, tracking_id, timestamp, message_handler) do
+  def handle_message(sharding_key, payload, headers, tracking_id, timestamp) do
     message_tracker = get_message_tracker(sharding_key)
     {message_id, delivery_tag} = tracking_id
     MessageTracker.track_delivery(message_tracker, message_id, delivery_tag)
 
-    get_data_updater_process(sharding_key, message_tracker, message_handler)
+    get_data_updater_process(sharding_key)
     |> GenServer.cast({:handle_message, payload, headers, message_id, timestamp})
   end
 
@@ -37,76 +38,90 @@ defmodule Mississippi.Consumer.DataUpdater do
   but is not a Mississippi message. Used to change the state of
   a stateful Handler. The call is blocking and there is no ordering guarantee.
   """
-  def handle_signal(sharding_key, signal, message_handler) do
-    message_tracker = get_message_tracker(sharding_key)
-
-    get_data_updater_process(sharding_key, message_tracker, message_handler)
+  def handle_signal(sharding_key, signal) do
+    get_data_updater_process(sharding_key)
     |> GenServer.call({:handle_signal, signal})
   end
 
   @doc """
   Provides a reference to the DataUpdater process that will handle the set of messages identified by
-  the given sharding key. Messages going through the DataUpdater process will be tracked by the
-  `message_tracker` and the `message_handler` will be used to process them.
+  the given sharding key.
   """
-  def get_data_updater_process(sharding_key, message_tracker, message_handler, opts \\ []) do
-    case Registry.lookup(Registry.DataUpdater, sharding_key) do
-      [] ->
-        if Keyword.get(opts, :offload_start) do
-          # We pass through AMQPDataConsumer to start the process to make sure that
-          # that start is serialized
-          AMQPDataConsumer.start_data_updater(sharding_key, message_tracker)
-        else
-          name = {:via, Registry, {Registry.DataUpdater, sharding_key}}
-          {:ok, pid} = start(sharding_key, message_tracker, message_handler, name: name)
-          pid
-        end
-
-      [{pid, nil}] ->
+  def get_data_updater_process(sharding_key) do
+    # TODO bring back :offload_start (?)
+    case DataUpdater.Supervisor.start_child({DataUpdater, sharding_key: sharding_key}) do
+      {:ok, pid} ->
         pid
+
+      {:ok, pid, _info} ->
+        pid
+
+      {:error, {:already_started, pid}} ->
+        pid
+
+      other ->
+        _ =
+          Logger.warning(
+            "Could not start DataUpdater process for sharding_key #{inspect(sharding_key)}: #{inspect(other)}",
+            tag: "data_updater_start_fail"
+          )
+
+        {:error, :data_updater_start_fail}
     end
   end
 
   @doc """
   Provides a reference to the MessageTracker process that will track the set of messages identified by
-  the given sharding key. The MessageTracker process is linked to the one calling this function.
+  the given sharding key.
+  The MessageTracker will use the process calling this function to ack messages (TODO change this).
   """
-  def get_message_tracker(sharding_key, opts \\ []) do
-    case Registry.lookup(Registry.MessageTracker, sharding_key) do
-      [] ->
-        if Keyword.get(opts, :offload_start) do
-          # We pass through AMQPDataConsumer to start the process to make sure that
-          # that start is serialized and acknowledger is the right process
-          AMQPDataConsumer.start_message_tracker(sharding_key)
-        else
-          acknowledger = self()
-          spawn_message_tracker(acknowledger, sharding_key)
-        end
+  def get_message_tracker(sharding_key) do
+    # TODO we will move away from having the DataUpdater to ack messages, but for now let's keep it as it was
+    acknowledger = self()
+    name = {:via, Registry, {Registry.MessageTracker, {:sharding_key, sharding_key}}}
 
-      [{pid, nil}] ->
+    # TODO bring back :offload_start (?)
+    case DynamicSupervisor.start_child(
+           MessageTracker.Supervisor,
+           {MessageTracker.Server, name: name, acknowledger: acknowledger}
+         ) do
+      {:ok, pid} ->
         pid
+
+      {:ok, pid, _info} ->
+        pid
+
+      {:error, {:already_started, pid}} ->
+        pid
+
+      other ->
+        _ =
+          Logger.warning(
+            "Could not start MessageTracker process for sharding_key #{inspect(sharding_key)}: #{inspect(other)}",
+            tag: "message_tracker_start_fail"
+          )
+
+        {:error, :message_tracker_start_fail}
     end
   end
 
-  @doc """
-  Starts a DataUpdater process that will handle the set of messages identified by
-  `sharding_key`. Messages going through the DataUpdater process will be tracked by the
-  `message_tracker` and the `message_handler` will be used to process them.
-  """
-  def start(sharding_key, message_tracker, message_handler, opts \\ []) do
-    init_arg = [
+  def start_link(extra_args, start_args) do
+    {:message_handler, message_handler} = extra_args
+    sharding_key = Keyword.fetch!(start_args, :sharding_key)
+
+    init_args = [
       sharding_key: sharding_key,
-      message_tracker: message_tracker,
       message_handler: message_handler
     ]
 
-    GenServer.start(__MODULE__, init_arg, opts)
+    name = {:via, Registry, {Registry.DataUpdater, {:sharding_key, sharding_key}}}
+    GenServer.start_link(__MODULE__, init_args, name: name)
   end
 
   @impl true
   def init(init_arg) do
     sharding_key = Keyword.fetch!(init_arg, :sharding_key)
-    message_tracker = Keyword.fetch!(init_arg, :message_tracker)
+    message_tracker = get_message_tracker(sharding_key)
     message_handler = Keyword.fetch!(init_arg, :message_handler)
 
     MessageTracker.register_data_updater(message_tracker)
@@ -192,12 +207,5 @@ defmodule Mississippi.Consumer.DataUpdater do
     %State{message_handler: message_handler, handler_state: handler_state} = state
     message_handler.terminate(reason, handler_state)
     :ok
-  end
-
-  defp spawn_message_tracker(acknowledger, sharding_key) do
-    name = {:via, Registry, {Registry.MessageTracker, sharding_key}}
-    {:ok, pid} = MessageTracker.start_link(acknowledger: acknowledger, name: name)
-
-    pid
   end
 end

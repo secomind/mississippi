@@ -5,8 +5,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
       :monitor,
       :queue_name,
       :queue_range,
-      :queue_total_count,
-      :message_handler
+      :queue_total_count
     ]
   end
 
@@ -72,13 +71,11 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
     queue_range_start = Keyword.fetch!(args, :range_start)
     queue_range_end = Keyword.fetch!(args, :range_end)
     queue_count = Keyword.fetch!(args, :queue_total_count)
-    message_handler = Keyword.fetch!(args, :message_handler)
 
     state = %State{
       queue_name: queue_name,
       queue_range: queue_range_start..queue_range_end,
-      queue_total_count: queue_count,
-      message_handler: message_handler
+      queue_total_count: queue_count
     }
 
     {:ok, state, {:continue, :init_consume}}
@@ -110,9 +107,8 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   end
 
   # TODO this was (seemed to be) unused
-  def handle_call({:start_data_updater, sharding_key, message_tracker}, _from, state) do
-    %State{message_handler: message_handler} = state
-    res = DataUpdater.get_data_updater_process(sharding_key, message_tracker, message_handler)
+  def handle_call({:start_data_updater, sharding_key, _message_tracker}, _from, state) do
+    res = DataUpdater.get_data_updater_process(sharding_key)
     {:reply, res, state}
   end
 
@@ -177,13 +173,13 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
 
   # Message consumed
   def handle_info({:basic_deliver, payload, meta}, state) do
-    %State{channel: chan, message_handler: message_handler} = state
+    %State{channel: chan} = state
     {headers, no_headers_meta} = Map.pop(meta, :headers, [])
     headers_map = amqp_headers_to_map(headers)
 
     {timestamp, clean_meta} = Map.pop(no_headers_meta, :timestamp)
 
-    case handle_consume(payload, headers_map, timestamp, clean_meta, message_handler) do
+    case handle_consume(payload, headers_map, timestamp, clean_meta) do
       :ok ->
         :ok
 
@@ -247,7 +243,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
     end
   end
 
-  defp handle_consume(payload, headers, timestamp, meta, message_handler) do
+  defp handle_consume(payload, headers, timestamp, meta) do
     with %{@sharding_key => sharding_key_binary} <- headers,
          {:ok, tracking_id} <- get_tracking_id(meta) do
       sharding_key = :erlang.binary_to_term(sharding_key_binary)
@@ -257,8 +253,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
         payload,
         headers,
         tracking_id,
-        timestamp,
-        message_handler
+        timestamp
       )
     else
       _ -> handle_invalid_msg(payload, headers, timestamp, meta)
