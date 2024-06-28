@@ -2,7 +2,6 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   defmodule State do
     defstruct [
       :channel,
-      :monitor,
       :queue_name,
       :queue_range,
       :queue_total_count
@@ -13,7 +12,8 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   use GenServer
 
   alias AMQP.Channel
-  alias Mississippi.Consumer.DataUpdater
+  alias Mississippi.Consumer.Message
+  alias Mississippi.Consumer.MessageTracker
 
   # TODO should this be customizable?
   @reconnect_interval 1_000
@@ -28,39 +28,8 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
     GenServer.start_link(__MODULE__, args, name: get_queue_via_tuple(index))
   end
 
-  def ack(pid, delivery_tag) do
-    Logger.debug("Going to ack #{inspect(delivery_tag)}")
-    GenServer.call(pid, {:ack, delivery_tag})
-  end
-
-  def discard(pid, delivery_tag) do
-    Logger.debug("Going to discard #{inspect(delivery_tag)}")
-    GenServer.call(pid, {:discard, delivery_tag})
-  end
-
-  def requeue(pid, delivery_tag) do
-    Logger.debug("Going to requeue #{inspect(delivery_tag)}")
-    GenServer.call(pid, {:requeue, delivery_tag})
-  end
-
-  def start_message_tracker(sharding_key) do
-    with {:ok, via_tuple} <- fetch_queue_via_tuple(sharding_key) do
-      GenServer.call(via_tuple, {:start_message_tracker, sharding_key})
-    end
-  end
-
-  def start_data_updater(sharding_key, message_tracker) do
-    with {:ok, via_tuple} <- fetch_queue_via_tuple(sharding_key) do
-      GenServer.call(via_tuple, {:start_data_updater, sharding_key, message_tracker})
-    end
-  end
-
   defp get_queue_via_tuple(queue_index) when is_integer(queue_index) do
     {:via, Registry, {Registry.AMQPDataConsumer, {:queue_index, queue_index}}}
-  end
-
-  defp fetch_queue_via_tuple(sharding_key) do
-    GenServer.call(self(), {:fetch_queue_via_tuple, sharding_key})
   end
 
   # Server callbacks
@@ -100,18 +69,6 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
     {:reply, res, state}
   end
 
-  # TODO this was (seemed to be) unused
-  def handle_call({:start_message_tracker, sharding_key}, _from, state) do
-    res = DataUpdater.get_message_tracker(sharding_key)
-    {:reply, res, state}
-  end
-
-  # TODO this was (seemed to be) unused
-  def handle_call({:start_data_updater, sharding_key, _message_tracker}, _from, state) do
-    res = DataUpdater.get_data_updater_process(sharding_key)
-    {:reply, res, state}
-  end
-
   def handle_call({:fetch_queue_via_tuple, sharding_key}, _from, state) do
     %State{
       queue_total_count: queue_count,
@@ -133,27 +90,15 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   @impl true
   def handle_info(:init_consume, state), do: init_consume(state)
 
+  # This is a Message Tracker deactivating itself normally, do nothing.
+  # In case a messageTracker crashes, we want to crash too, so that messages are requeued.
+  # TODO this^ seems a bit too much (requeing ALL messages for a single MT crash), rethink it
   def handle_info(
         {:DOWN, _, :process, pid, :normal},
         %State{channel: %Channel{pid: chan_pid}} = state
       )
       when pid != chan_pid do
-    # This is a Message Tracker deactivating itself normally, do nothing
     {:noreply, state}
-  end
-
-  # Make sure to handle monitored message trackers exit messages
-  # Under the hood DataUpdater calls Process.monitor so those monitor are leaked into this process.
-  def handle_info(
-        {:DOWN, monitor, :process, chan_pid, reason},
-        %{monitor: monitor, channel: %{pid: chan_pid}} = state
-      ) do
-    # Channel went down, stop the process
-    Logger.warning("AMQP data consumer crashed, reason: #{inspect(reason)}",
-      tag: "data_consumer_chan_crash"
-    )
-
-    init_consume(%State{state | channel: nil, monitor: nil})
   end
 
   # Confirmation sent by the broker after registering this process as a consumer
@@ -179,7 +124,14 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
 
     {timestamp, clean_meta} = Map.pop(no_headers_meta, :timestamp)
 
-    case handle_consume(payload, headers_map, timestamp, clean_meta) do
+    message = %Message{
+      payload: payload,
+      headers: headers_map,
+      timestamp: timestamp,
+      meta: clean_meta
+    }
+
+    case handle_consume(message, chan) do
       :ok ->
         :ok
 
@@ -221,14 +173,14 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
     with :ok <- @adapter.qos(channel, prefetch_count: @consumer_prefetch_count),
          {:ok, _queue} <- @adapter.declare_queue(channel, queue_name, durable: true),
          {:ok, _consumer_tag} <- @adapter.consume(channel, queue_name, self()) do
-      ref = Process.monitor(channel_pid)
+      Process.link(channel_pid)
 
       _ =
         Logger.debug("AMQPDataConsumer for queue #{queue_name} initialized",
           tag: "data_consumer_init_ok"
         )
 
-      {:noreply, %State{state | channel: channel, monitor: ref}}
+      {:noreply, %State{state | channel: channel}}
     else
       {:error, reason} ->
         Logger.warning(
@@ -239,28 +191,27 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
         # Something went wrong, let's put the channel back where it belongs
         _ = ExRabbitPool.checkin_channel(conn, channel)
         schedule_connect()
-        {:noreply, %{state | channel: nil, monitor: nil}}
+        {:noreply, %{state | channel: nil}}
     end
   end
 
-  defp handle_consume(payload, headers, timestamp, meta) do
-    with %{@sharding_key => sharding_key_binary} <- headers,
-         {:ok, tracking_id} <- get_tracking_id(meta) do
+  defp handle_consume(%Message{} = message, %Channel{} = channel) do
+    with %{@sharding_key => sharding_key_binary} <- message.headers do
+      # {:ok, tracking_id} <- get_tracking_id(message.meta) do
       sharding_key = :erlang.binary_to_term(sharding_key_binary)
-      # This call might spawn processes and implicitly monitor them
-      DataUpdater.handle_message(
-        sharding_key,
-        payload,
-        headers,
-        tracking_id,
-        timestamp
-      )
+
+      {:ok, pid} = MessageTracker.get_message_tracker(sharding_key)
+
+      MessageTracker.handle_message(pid, message, channel)
     else
-      _ -> handle_invalid_msg(payload, headers, timestamp, meta)
+      _ -> handle_invalid_msg(message)
     end
   end
 
-  defp handle_invalid_msg(payload, headers, timestamp, meta) do
+  defp handle_invalid_msg(message) do
+    %Message{payload: payload, headers: headers, timestamp: timestamp, meta: meta} =
+      message
+
     Logger.warning(
       "Invalid AMQP message: #{inspect(Base.encode64(payload))} #{inspect(headers)} #{inspect(timestamp)} #{inspect(meta)}",
       tag: "data_consumer_invalid_msg"
@@ -273,16 +224,5 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
     Enum.reduce(headers, %{}, fn {key, _type, value}, acc ->
       Map.put(acc, key, value)
     end)
-  end
-
-  defp get_tracking_id(meta) do
-    message_id = meta.message_id
-    delivery_tag = meta.delivery_tag
-
-    if is_binary(message_id) and is_integer(delivery_tag) do
-      {:ok, {meta.message_id, meta.delivery_tag}}
-    else
-      {:error, :invalid_message_metadata}
-    end
   end
 end
