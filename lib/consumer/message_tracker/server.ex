@@ -1,7 +1,7 @@
 defmodule Mississippi.Consumer.MessageTracker.Server do
   defmodule QueueEntry do
     defstruct [
-      :channel_pid,
+      :channel,
       :data_consumer_pid,
       :message,
       :data_updater_pid
@@ -9,40 +9,47 @@ defmodule Mississippi.Consumer.MessageTracker.Server do
   end
 
   use GenServer
+  require Logger
   alias Mississippi.Consumer.DataUpdater
+  alias Mississippi.Consumer.Message
+
+  @adapter ExRabbitPool.RabbitMQ
 
   def start_link(args) do
     name = Keyword.fetch!(args, :name)
-    _ = Logger.info("Starting NEWMessageTracker #{inspect(name)}", tag: "message_tracker_start")
+    _ = Logger.info("Starting MessageTracker #{inspect(name)}", tag: "message_tracker_start")
     GenServer.start_link(__MODULE__, args, name: name)
   end
 
   @impl true
   def init(init_args) do
-    state = %{queue: :queue.new(), sharding_key: init_args[:sharding_key]}
+    sharding_key = Keyword.fetch!(init_args, :sharding_key)
+    state = %{queue: :queue.new(), sharding_key: sharding_key}
     {:ok, state}
   end
 
   @impl true
-  def handle_cast({:handle_message, message}, state) do
+  def handle_cast({:handle_message, %Message{} = message, channel}, state) do
     # :queue.len/1 runs in O(n)
     if :queue.is_empty(state.queue) do
-      new_state = put_message_in_queue(message, state)
-      {:continue, :process_message, new_state}
+      new_state = put_message_in_queue(message, channel, state)
+      {:noreply, new_state, {:continue, :process_message}}
     else
-      new_state = put_message_in_queue(message, state)
-      {:ok, new_state}
+      new_state = put_message_in_queue(message, channel, state)
+      {:noreply, new_state}
     end
   end
 
   @impl true
-  def handle_call({:ack_message, message}, {dup_pid, _from}, state) do
+  def handle_call({:ack_delivery, %Message{} = message}, {dup_pid, _from}, state) do
     # Invariant: we're always processing the first message in the queue
     # Let us make sure?
     case :queue.peek(state.queue) do
       {:value, %QueueEntry{message: ^message, data_updater_pid: ^dup_pid} = entry} ->
-        %QueueEntry{channel_pid: channel_pid} = entry
-        AMQP.Basic.ack(channel_pid, delivery_tag_from_message(message))
+        %QueueEntry{channel: channel} = entry
+
+        # TODO check what's missing here! It seems that neither meta.delivery_tag nor meta.message_id are ok! Maybe it's channel and not channel_pid?
+        @adapter.ack(channel, message.meta.delivery_tag)
         new_state = remove_head_from_queue(state)
         # let's move on to the next message
         {:reply, :ok, new_state, {:continue, :process_message}}
@@ -54,13 +61,13 @@ defmodule Mississippi.Consumer.MessageTracker.Server do
   end
 
   @impl true
-  def handle_call({:discard_message, message}, {dup_pid, _from}, state) do
+  def handle_call({:discard, %Message{} = message}, {dup_pid, _from}, state) do
     # Invariant: we're always processing the first message in the queue
     # Let us make sure?
     case :queue.peek(state.queue) do
       {:value, %QueueEntry{message: ^message, data_updater_pid: ^dup_pid} = entry} ->
-        %QueueEntry{channel_pid: channel_pid} = entry
-        AMQP.Basic.nack(channel_pid, delivery_tag_from_message(message))
+        %QueueEntry{channel: channel} = entry
+        AMQP.Basic.nack(channel, delivery_tag_from_message(message))
         new_state = remove_head_from_queue(state)
         # let's move on to the next message
         {:reply, :ok, new_state, {:continue, :process_message}}
@@ -79,7 +86,7 @@ defmodule Mississippi.Consumer.MessageTracker.Server do
     active_messages =
       :queue.filter(
         fn %QueueEntry{} = entry ->
-          entry.channel_pid != down_pid and entry.data_consumer_pid != down_pid
+          entry.channel.pid != down_pid and entry.data_consumer_pid != down_pid
         end,
         queue
       )
@@ -112,34 +119,26 @@ defmodule Mississippi.Consumer.MessageTracker.Server do
       Process.monitor(data_updater_pid)
       # We spin to put the DUP pid in the entry
       {{:value, entry}, new_queue} = :queue.out(queue)
+      %{message: %Message{} = message} = entry
       new_entry = %QueueEntry{entry | data_updater_pid: data_updater_pid}
       final_queue = :queue.in(new_entry, new_queue)
 
-      payload = :TODO_from_message
-      headers = :TODO_from_message
-      tracking_id = :TODO_from_message
-      timestamp = :TODO_from_message
-
       # ... and tell  DUP to handle it
       # TODO make this PID-aware (i.e. DataUpdater.handle_message(pid, sharding_key, ....))
-      DataUpdater.handle_message(sharding_key, payload, headers, tracking_id, timestamp)
+      DataUpdater.handle_message(data_updater_pid, message)
       {:noreply, %{state | queue: final_queue}}
     end
   end
 
-  defp delivery_tag_from_message(_message) do
-    :TODO
+  defp delivery_tag_from_message(%Message{} = message) do
+    message.meta.delivery_tag
   end
 
-  defp put_message_in_queue(message, state) do
+  defp put_message_in_queue(message, channel, state) do
     %{queue: queue} = state
 
-    channel_pid = :TODO_in_call
-    data_consumer_pid = :TODO_in_call
-
     entry = %QueueEntry{
-      channel_pid: channel_pid,
-      data_consumer_pid: data_consumer_pid,
+      channel: channel,
       message: message
     }
 

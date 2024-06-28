@@ -12,6 +12,7 @@ defmodule Mississippi.Consumer.DataUpdater do
 
   alias Mississippi.Consumer.MessageTracker
   alias Mississippi.Consumer.DataUpdater
+  alias Mississippi.Consumer.Message
   require Logger
 
   # TODO make this configurable?
@@ -24,13 +25,8 @@ defmodule Mississippi.Consumer.DataUpdater do
   If not, the message will remain in memory until it can be processed, i.e. it is now the first
   in-order message.
   """
-  def handle_message(sharding_key, payload, headers, tracking_id, timestamp) do
-    message_tracker = get_message_tracker(sharding_key)
-    {message_id, delivery_tag} = tracking_id
-    MessageTracker.track_delivery(message_tracker, message_id, delivery_tag)
-
-    get_data_updater_process(sharding_key)
-    |> GenServer.cast({:handle_message, payload, headers, message_id, timestamp})
+  def handle_message(data_updater_pid, %Message{} = message) do
+    GenServer.cast(data_updater_pid, {:handle_message, message})
   end
 
   @doc """
@@ -51,13 +47,13 @@ defmodule Mississippi.Consumer.DataUpdater do
     # TODO bring back :offload_start (?)
     case DataUpdater.Supervisor.start_child({DataUpdater, sharding_key: sharding_key}) do
       {:ok, pid} ->
-        pid
+        {:ok, pid}
 
       {:ok, pid, _info} ->
-        pid
+        {:ok, pid}
 
       {:error, {:already_started, pid}} ->
-        pid
+        {:ok, pid}
 
       other ->
         _ =
@@ -73,18 +69,14 @@ defmodule Mississippi.Consumer.DataUpdater do
   @doc """
   Provides a reference to the MessageTracker process that will track the set of messages identified by
   the given sharding key.
-  The MessageTracker will use the process calling this function to ack messages (TODO change this).
   """
   def get_message_tracker(sharding_key) do
-    # TODO we will move away from having the DataUpdater to ack messages, but for now let's keep it as it was
-    acknowledger = self()
     name = {:via, Registry, {Registry.MessageTracker, {:sharding_key, sharding_key}}}
 
     # TODO bring back :offload_start (?)
     case DynamicSupervisor.start_child(
            MessageTracker.Supervisor,
-           {MessageTracker.Server,
-            name: name, acknowledger: acknowledger, sharding_key: sharding_key}
+           {MessageTracker.Server, name: name, sharding_key: sharding_key}
          ) do
       {:ok, pid} ->
         pid
@@ -125,9 +117,6 @@ defmodule Mississippi.Consumer.DataUpdater do
     message_tracker = get_message_tracker(sharding_key)
     message_handler = Keyword.fetch!(init_arg, :message_handler)
 
-    MessageTracker.register_data_updater(message_tracker)
-    Process.monitor(message_tracker)
-
     with {:ok, handler_state} <- message_handler.init(sharding_key) do
       state = %State{
         sharding_key: sharding_key,
@@ -151,32 +140,32 @@ defmodule Mississippi.Consumer.DataUpdater do
   end
 
   @impl true
-  def handle_cast({:handle_message, payload, headers, message_id, timestamp}, state) do
-    if MessageTracker.can_process_message(state.message_tracker, message_id) do
-      case state.message_handler.handle_message(
-             payload,
-             headers,
-             message_id,
-             timestamp,
-             state.handler_state
-           ) do
-        {:ok, _, new_handler_state} ->
-          _ = Logger.debug("Successfully handled message #{inspect(message_id)}")
-          MessageTracker.ack_delivery(state.message_tracker, message_id)
+  def handle_cast({:handle_message, %Message{} = message}, state) do
+    %Message{payload: payload, headers: headers, timestamp: timestamp, meta: meta} = message
 
-          new_state = %State{state | handler_state: new_handler_state}
+    case state.message_handler.handle_message(
+           payload,
+           headers,
+           meta.message_id,
+           timestamp,
+           state.handler_state
+         ) do
+      {:ok, _, new_handler_state} ->
+        _ = Logger.debug("Successfully handled message #{inspect(meta.message_id)}")
+        MessageTracker.ack_delivery(state.message_tracker, message)
 
-          {:noreply, new_state, @data_updater_deactivation_interval_ms}
+        new_state = %State{state | handler_state: new_handler_state}
 
-        {:error, reason, _state} ->
-          _ =
-            Logger.warning(
-              "Error handling message #{inspect(message_id)}, reason #{inspect(reason)}"
-            )
+        {:noreply, new_state, @data_updater_deactivation_interval_ms}
 
-          MessageTracker.discard(state.message_tracker, message_id)
-          {:noreply, state, @data_updater_deactivation_interval_ms}
-      end
+      {:error, reason, _state} ->
+        _ =
+          Logger.warning(
+            "Error handling message #{inspect(meta.message_id)}, reason #{inspect(reason)}"
+          )
+
+        MessageTracker.discard(state.message_tracker, message)
+        {:noreply, state, @data_updater_deactivation_interval_ms}
     end
   end
 
