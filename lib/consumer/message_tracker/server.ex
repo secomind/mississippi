@@ -1,222 +1,171 @@
 defmodule Mississippi.Consumer.MessageTracker.Server do
-  alias Mississippi.Consumer.AMQPDataConsumer
+  @moduledoc """
+  This module implements the MessageTracker process logic.
+  """
+
+  use GenServer, restart: :transient
   require Logger
-  use GenServer
+  alias Mississippi.Consumer.DataUpdater
+  alias Mississippi.Consumer.Message
+  alias Mississippi.Consumer.MessageTracker.Server.State
 
-  @base_backoff 1000
-  @random_backoff 9000
-
-  # TODO: this should probably be a :gen_statem so we can simplify state data
+  @adapter ExRabbitPool.RabbitMQ
+  # TODO make this configurable? (Same as DataUpdater)
+  @message_tracker_deactivation_interval_ms :timer.hours(3)
 
   def start_link(args) do
     name = Keyword.fetch!(args, :name)
-    _ = Logger.info("Starting MessageTracker #{inspect(name)}", tag: "message_tracker_start")
+    _ = Logger.debug("Starting MessageTracker #{inspect(name)}", tag: "message_tracker_start")
     GenServer.start_link(__MODULE__, args, name: name)
   end
 
+  @impl true
   def init(init_args) do
-    acknowledger = Keyword.fetch!(init_args, :acknowledger)
-    {:ok, {:new, :queue.new(), %{}, acknowledger}}
+    sharding_key = Keyword.fetch!(init_args, :sharding_key)
+
+    state = %State{
+      queue: :queue.new(),
+      sharding_key: sharding_key,
+      data_updater_pid: nil,
+      channel: nil
+    }
+
+    {:ok, state, @message_tracker_deactivation_interval_ms}
   end
 
-  def handle_call(:register_data_updater, from, {:new, queue, ids, acknowledger}) do
-    monitor(from)
-    {:reply, :ok, {:accepting, queue, ids, acknowledger}}
+  @impl true
+  def handle_cast({:handle_message, %Message{} = message, new_channel}, state) do
+    %State{channel: old_channel} = state
+
+    new_state =
+      if old_channel == nil or new_channel != old_channel do
+        # If the channel is different, it means the old channel crashed. Update the reference.
+        Process.monitor(new_channel.pid)
+        %State{state | channel: new_channel}
+      else
+        state
+      end
+
+    {:noreply, new_state, {:continue, {:message_received, message}}}
   end
 
-  def handle_call(:register_data_updater, from, {_state, queue, ids, acknowledger}) do
-    Logger.debug("Blocked data updater registration. Queue is #{inspect(queue)}.")
+  @impl true
+  def handle_call({:ack_delivery, %Message{} = message}, _from, state) do
+    # Invariant: we're always processing the first message in the queue
+    # Let us make sure
+    %State{queue: queue} = state
 
-    {:noreply, {{:waiting_cleanup, from}, queue, ids, acknowledger}}
-  end
-
-  def handle_call(
-        {:can_process_message, message_id},
-        from,
-        {:accepting, queue, ids, acknowledger} = s
-      ) do
     case :queue.peek(queue) do
-      {:value, ^message_id} ->
-        case Map.get(ids, message_id) do
-          nil ->
-            {:noreply, {{:waiting_delivery, from}, queue, ids, acknowledger}}
-
-          {:requeued, _delivery_tag} ->
-            {:noreply, {{:waiting_delivery, from}, queue, ids, acknowledger}}
-
-          _ ->
-            {:reply, true, s}
-        end
-
-      {:value, _} ->
-        {:reply, false, s}
-
-      :empty ->
-        Logger.debug("#{inspect(message_id)} has not been tracked yet. Waiting.")
-        {:noreply, {{:waiting_delivery, message_id, from}, queue, ids, acknowledger}}
-    end
-  end
-
-  def handle_call({:ack_delivery, message_id}, _from, {:accepting, queue, ids, acknowledger}) do
-    {{:value, ^message_id}, new_queue} = :queue.out(queue)
-    {delivery_tag, new_ids} = Map.pop(ids, message_id)
-
-    :ok = ack(acknowledger, delivery_tag)
-
-    {:reply, :ok, {:accepting, new_queue, new_ids, acknowledger}}
-  end
-
-  def handle_call({:discard, message_id}, _from, {:accepting, queue, ids, acknowledger}) do
-    {{:value, ^message_id}, new_queue} = :queue.out(queue)
-    {delivery_tag, new_ids} = Map.pop(ids, message_id)
-
-    :ok = discard(acknowledger, delivery_tag)
-
-    {:reply, :ok, {:accepting, new_queue, new_ids, acknowledger}}
-  end
-
-  def handle_call(:deactivate, _from, {state, queue, ids, _acknowledger} = s) do
-    cond do
-      not :queue.is_empty(queue) ->
-        # We are in a dirty state, so we will not deactivate and we return an error
-        Logger.warning("Refusing to deactivate MessageTracker with non-empty queue.",
-          tag: "message_tracker_deactivate_failed"
-        )
-
-        {:reply, {:error, :deactivate_failed}, s}
-
-      ids != %{} ->
-        # We are in a dirty state, so we will not deactivate and we return an error
-        Logger.warning("Refusing to deactivate MessageTracker with non-empty ids.",
-          tag: "message_tracker_deactivate_failed"
-        )
-
-        {:reply, {:error, :deactivate_failed}, s}
-
-      state != :accepting ->
-        # We are in a dirty state, so we will not deactivate and we return an error
-        Logger.warning("Refusing to deactivate MessageTracker not in :accepting state.",
-          tag: "message_tracker_deactivate_failed"
-        )
-
-        {:reply, {:error, :deactivate_failed}, s}
-
-      true ->
-        # Everything is clean, we can deactivate
-        {:stop, :normal, :ok, s}
-    end
-  end
-
-  def handle_cast(
-        {:track_delivery, message_id, delivery_tag},
-        {{:waiting_delivery, waiting_process}, queue, ids, acknowledger}
-      ) do
-    case Map.get(ids, message_id) do
-      nil ->
-        {new_queue, new_ids} = enqueue_message(queue, ids, message_id, delivery_tag)
-        {:noreply, {{:waiting_delivery, waiting_process}, new_queue, new_ids, acknowledger}}
-
-      {:requeued, _tag} ->
-        new_ids = Map.put(ids, message_id, delivery_tag)
-
-        if :queue.peek(queue) == {:value, message_id} do
-          GenServer.reply(waiting_process, true)
-          {:noreply, {:accepting, queue, new_ids, acknowledger}}
-        else
-          {:noreply, {{:waiting_delivery, waiting_process}, queue, new_ids, acknowledger}}
-        end
+      {:value, ^message} ->
+        @adapter.ack(state.channel, message.meta.delivery_tag)
+        new_state = %State{state | queue: :queue.drop(queue)}
+        # let's move on to the next message
+        {:reply, :ok, new_state, {:continue, :process_next_message}}
 
       _ ->
-        new_ids = Map.put(ids, message_id, delivery_tag)
-        {:noreply, {{:waiting_delivery, waiting_process}, queue, new_ids, acknowledger}}
+        # discard the message, we don't care for it anymore
+        {:reply, :ok, state, @message_tracker_deactivation_interval_ms}
     end
   end
 
-  def handle_cast(
-        {:track_delivery, message_id, delivery_tag},
-        {state, queue, ids, acknowledger}
-      ) do
-    unless Map.has_key?(ids, message_id) do
-      {new_queue, new_ids} = enqueue_message(queue, ids, message_id, delivery_tag)
-      {:noreply, {state, new_queue, new_ids, acknowledger}}
+  @impl true
+  def handle_call({:reject, %Message{} = message}, _from, state) do
+    # Invariant: we're always processing the first message in the queue
+    # Let us make sure
+    %State{queue: queue} = state
+
+    case :queue.peek(queue) do
+      {:value, ^message} ->
+        @adapter.reject(state.channel, delivery_tag_from_message(message))
+        new_state = %State{state | queue: :queue.drop(queue)}
+        # let's move on to the next message
+        {:reply, :ok, new_state, {:continue, :process_next_message}}
+
+      _ ->
+        # discard the message, we don't care for it anymore
+        {:reply, :ok, state, @message_tracker_deactivation_interval_ms}
+    end
+  end
+
+  # If the channel has crashed, we should crash, too.
+  # This way, no messages are acked on the wrong channel
+  @impl true
+  def handle_info({:DOWN, _ref, :process, down_pid, _reason}, %State{channel: channel} = state)
+      when channel.pid == down_pid do
+    {:stop, :channel_crashed, state}
+  end
+
+  @impl true
+  def handle_info({:DOWN, _ref, :process, down_pid, _reason}, state) do
+    %State{data_updater_pid: data_updater_pid} = state
+
+    # Now, let's check if the DataUpdater crashed
+    new_dup_pid = if down_pid == data_updater_pid, do: nil, else: data_updater_pid
+
+    new_state = %State{state | data_updater_pid: new_dup_pid}
+
+    {:noreply, new_state, {:continue, :process_next_message}}
+  end
+
+  @impl true
+  def handle_info(:timeout, state) do
+    {:stop, :normal, state}
+  end
+
+  @impl true
+  def terminate(reason, _state) do
+    _ =
+      Logger.info("MessageTracker terminating with reason: #{inspect(reason)}",
+        tag: "message_tracker_terminate"
+      )
+
+    :ok
+  end
+
+  @impl true
+  def handle_continue({:message_received, message}, state) do
+    %State{queue: queue} = state
+
+    new_queue = :queue.in(message, queue)
+    new_state = %State{state | queue: new_queue}
+    # :queue.len/1 runs in O(n), :queue.is_empty in O(1)
+    if :queue.is_empty(state.queue) do
+      {:noreply, new_state, {:continue, :process_next_message}}
     else
-      new_ids = Map.put(ids, message_id, delivery_tag)
-      {:noreply, {state, queue, new_ids, acknowledger}}
+      {:noreply, new_state, @message_tracker_deactivation_interval_ms}
     end
   end
 
-  def handle_info(
-        {:DOWN, _, :process, _pid, reason},
-        {state, queue, ids, acknowledger} = s
-      ) do
-    Logger.warning("Crash detected. Reason: #{inspect(reason)}, state: #{inspect(s)}.",
-      tag: "data_upd_crash_detected"
-    )
-
-    # TODO
-    # :telemetry.execute([:astarte, :data_updater_plant, :data_updater, :detected_crash], %{}, %{})
-
-    marked_ids =
-      :queue.to_list(queue)
-      |> List.foldl(%{}, fn item, acc ->
-        delivery_tag = ids[item]
-        :ok = requeue(acknowledger, delivery_tag)
-        Map.put(acc, item, {:requeued, delivery_tag})
-      end)
-
-    unless :queue.is_empty(queue) do
-      :rand.uniform(@random_backoff)
-      |> Kernel.+(@base_backoff)
-      |> :timer.sleep()
-    end
-
-    case state do
-      {:waiting_cleanup, waiting_process} ->
-        monitor(waiting_process)
-        GenServer.reply(waiting_process, :ok)
-        {:noreply, {:accepting, queue, marked_ids, acknowledger}}
-
-      _ ->
-        {:noreply, {:new, queue, marked_ids, acknowledger}}
+  @impl true
+  def handle_continue(:process_next_message, state) do
+    # We check if there are messages to handle
+    if :queue.is_empty(state.queue) do
+      # If not, we're ok
+      {:noreply, state, @message_tracker_deactivation_interval_ms}
+    else
+      # otherwise, let's pick the next one...
+      %{queue: queue, sharding_key: sharding_key} = state
+      {:value, message} = :queue.peek(queue)
+      # ... and tell the DU process to handle it
+      {:ok, data_updater_pid} = DataUpdater.get_data_updater_process(sharding_key)
+      new_state = maybe_update_and_monitor_dup_pid(state, data_updater_pid)
+      DataUpdater.handle_message(data_updater_pid, message)
+      {:noreply, new_state, @message_tracker_deactivation_interval_ms}
     end
   end
 
-  defp monitor({pid, _ref}) do
-    Process.monitor(pid)
+  defp delivery_tag_from_message(%Message{} = message) do
+    message.meta.delivery_tag
   end
 
-  defp enqueue_message(queue, ids, message_id, delivery_tag) do
-    new_ids = Map.put(ids, message_id, delivery_tag)
-    new_queue = :queue.in(message_id, queue)
-    {new_queue, new_ids}
-  end
+  defp maybe_update_and_monitor_dup_pid(state, new_dup_pid) do
+    %State{data_updater_pid: old_data_updater_pid} = state
 
-  defp requeue(_acknowledger, {:injected_msg, _ref}) do
-    :ok
-  end
-
-  defp requeue(acknowledger, delivery_tag) when is_integer(delivery_tag) do
-    AMQPDataConsumer.requeue(acknowledger, delivery_tag)
-  end
-
-  defp requeue(_acknowledger, {:requeued, delivery_tag}) when is_integer(delivery_tag) do
-    # Do not try to requeue already requeued messages, otherwise channel will crash
-    :ok
-  end
-
-  defp ack(_acknowledger, {:injected_msg, _ref}) do
-    :ok
-  end
-
-  defp ack(acknowledger, delivery_tag) when is_integer(delivery_tag) do
-    AMQPDataConsumer.ack(acknowledger, delivery_tag)
-  end
-
-  defp discard(_acknowledger, {:injected_msg, _ref}) do
-    :ok
-  end
-
-  defp discard(acknowledger, delivery_tag) when is_integer(delivery_tag) do
-    AMQPDataConsumer.discard(acknowledger, delivery_tag)
+    if old_data_updater_pid == new_dup_pid do
+      state
+    else
+      Process.monitor(new_dup_pid)
+      %State{state | data_updater_pid: new_dup_pid}
+    end
   end
 end

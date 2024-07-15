@@ -13,11 +13,6 @@ defmodule Mississippi.Consumer.DataUpdater.Supervisor do
   end
 
   def start_child(child) do
-    _ =
-      Logger.info("Adding a new DataUpdater",
-        tag: "data_updater_add"
-      )
-
     DynamicSupervisor.start_child(__MODULE__, child)
   end
 

@@ -3,19 +3,11 @@ defmodule Mississippi.Producer.EventsProducer do
   The entry point for publishing messages on Mississippi.
   """
 
-  defmodule State do
-    defstruct [
-      :channel,
-      :events_exchange_name,
-      :queue_total_count,
-      :queue_prefix
-    ]
-  end
-
   use GenServer
 
   alias AMQP.Channel
   alias Mississippi.Producer.EventsProducer.Options
+  alias Mississippi.Producer.EventsProducer.State
   require Logger
 
   # TODO should these be customizable?

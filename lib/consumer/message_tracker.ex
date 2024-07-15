@@ -2,53 +2,72 @@ defmodule Mississippi.Consumer.MessageTracker do
   @moduledoc """
   The MessageTracker process guarantees that messages sharing the same sharding key
   are processed in (chronological) order.
+  Under the hood, messages are put in a FIFO queue, and the next message is processed
+  only if the current one has been handled (either acked or rejected).
+  In order to maintain the strong ordering guarantee, it is possible that in some corner cases
+  a message gets processed twice, but after all with strange aeons, even death may die.
   """
 
+  alias Mississippi.Consumer.MessageTracker
+  alias Mississippi.Consumer.Message
+  require Logger
+
   @doc """
-  Start tracking a message. This call is not blocking.
+  Provides a reference to the MessageTracker process that will track the set of messages identified by
+  the given sharding key.
   """
-  def track_delivery(message_tracker, message_id, delivery_tag) do
-    GenServer.cast(message_tracker, {:track_delivery, message_id, delivery_tag})
+  @spec get_message_tracker(sharding_key :: term()) ::
+          {:ok, pid()} | {:error, :message_tracker_start_fail}
+  def get_message_tracker(sharding_key) do
+    name = {:via, Registry, {Registry.MessageTracker, {:sharding_key, sharding_key}}}
+
+    # TODO bring back :offload_start (?)
+    case DynamicSupervisor.start_child(
+           MessageTracker.Supervisor,
+           {MessageTracker.Server, name: name, sharding_key: sharding_key}
+         ) do
+      {:ok, pid} ->
+        {:ok, pid}
+
+      {:ok, pid, _info} ->
+        {:ok, pid}
+
+      {:error, {:already_started, pid}} ->
+        {:ok, pid}
+
+      other ->
+        _ =
+          Logger.warning(
+            "Could not start MessageTracker process for sharding_key #{inspect(sharding_key)}: #{inspect(other)}",
+            tag: "message_tracker_start_fail"
+          )
+
+        {:error, :message_tracker_start_fail}
+    end
   end
 
   @doc """
-  Add a DataUpdater process that will handle messages tracked by the DataTracker process.
-  This call is blocking, as only one DataUpdater process is allowed to register to a
-  single MessageTracker.
+  Starts handling a message. This call is not blocking.
+  The message will be put in the MessageTracker process FIFO queue, and processed
+  when it is on top of it.
   """
-  def register_data_updater(message_tracker) do
-    GenServer.call(message_tracker, :register_data_updater, :infinity)
+  def handle_message(message_tracker, %Message{} = message, channel) do
+    GenServer.cast(message_tracker, {:handle_message, message, channel})
   end
 
   @doc """
-  Returns `true` if the caller process can process the message identified by `message_id`,
-  `false` otherwise. This call is blocking, as the confirmation is given only to the first
-  in-order message.
-  """
-  def can_process_message(message_tracker, message_id) do
-    GenServer.call(message_tracker, {:can_process_message, message_id}, :infinity)
-  end
-
-  @doc """
-  Allows the MessageTracker to signal to the AMQPConsumer process to ack the message identified by `message_id`.
+  Signals to the MessageTracker process to ack the message.
   This call is blocking, as only first in-order message can be acked.
   """
-  def ack_delivery(message_tracker, message_id) do
-    GenServer.call(message_tracker, {:ack_delivery, message_id})
+  def ack_delivery(message_tracker, %Message{} = message) do
+    GenServer.call(message_tracker, {:ack_delivery, message})
   end
 
   @doc """
-  Allows the MessageTracker to signal to the AMQPConsumer process to discard the message identified by `message_id`.
-  This call is blocking, as only first in-order message can be discarded.
+  Signals to the MessageTracker process to reject the message.
+  This call is blocking, as only first in-order message can be rejected.
   """
-  def discard(message_tracker, message_id) do
-    GenServer.call(message_tracker, {:discard, message_id})
-  end
-
-  @doc """
-  Invoked to deactivate a given MessageTracker process.
-  """
-  def deactivate(message_tracker) do
-    GenServer.call(message_tracker, :deactivate, :infinity)
+  def reject(message_tracker, %Message{} = message) do
+    GenServer.call(message_tracker, {:reject, message})
   end
 end
