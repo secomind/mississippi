@@ -8,10 +8,12 @@ defmodule Mississippi.Consumer.MessageTracker do
   a message gets processed twice, but after all with strange aeons, even death may die.
   """
 
-  alias Mississippi.Consumer.MessageTracker
-  alias Mississippi.Consumer.Message
-  require Logger
   use Efx
+
+  alias Mississippi.Consumer.Message
+  alias Mississippi.Consumer.MessageTracker
+
+  require Logger
 
   @doc """
   Provides a reference to the MessageTracker process that will track the set of messages identified by

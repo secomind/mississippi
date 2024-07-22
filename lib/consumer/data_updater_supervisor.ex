@@ -1,6 +1,8 @@
 defmodule Mississippi.Consumer.DataUpdater.Supervisor do
-  require Logger
+  @moduledoc false
   use DynamicSupervisor
+
+  require Logger
 
   def start_link(init_args) do
     DynamicSupervisor.start_link(__MODULE__, init_args, name: __MODULE__)

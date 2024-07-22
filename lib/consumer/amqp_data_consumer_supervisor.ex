@@ -1,4 +1,5 @@
 defmodule Mississippi.Consumer.AMQPDataConsumer.Supervisor do
+  @moduledoc false
   use Supervisor
 
   alias Mississippi.Consumer.AMQPDataConsumer

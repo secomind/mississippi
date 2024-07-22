@@ -1,5 +1,6 @@
 defmodule Mississippi.Consumer.DataUpdater.Test do
   use ExUnit.Case
+
   import Hammox
 
   alias Mississippi.Consumer.DataUpdater

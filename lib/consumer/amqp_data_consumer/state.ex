@@ -1,4 +1,5 @@
 defmodule Mississippi.Consumer.AMQPDataConsumer.State do
+  @moduledoc false
   use TypedStruct
 
   typedstruct do

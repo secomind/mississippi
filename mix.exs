@@ -39,6 +39,7 @@ defmodule Mississippi.MixProject do
       {:mix_audit, "~> 2.0", only: [:dev], runtime: false},
       {:nimble_options, "~> 1.0"},
       {:pretty_log, "~> 0.1"},
+      {:styler, "~> 1.0.0-rc.1", only: [:dev], runtime: false},
       {:typed_struct, "~> 0.3.0"}
     ]
   end

@@ -1,4 +1,5 @@
 defmodule Mississippi.Consumer.MessageTracker.Server.State do
+  @moduledoc false
   use TypedStruct
 
   typedstruct do

@@ -1,4 +1,5 @@
 defmodule Mississippi.Consumer.Message do
+  @moduledoc false
   use TypedStruct
 
   typedstruct do

@@ -8,6 +8,7 @@ defmodule Mississippi.Producer.EventsProducer do
   alias AMQP.Basic
   alias Mississippi.Producer.EventsProducer.Options
   alias Mississippi.Producer.EventsProducer.State
+
   require Logger
 
   # TODO should these be customizable?
@@ -67,7 +68,8 @@ defmodule Mississippi.Producer.EventsProducer do
     } = state
 
     headers =
-      Keyword.get(opts, :headers, [])
+      opts
+      |> Keyword.get(:headers, [])
       |> Keyword.put(:sharding_key, :erlang.term_to_binary(sharding_key))
 
     # TODO: handle basic.return
@@ -78,7 +80,7 @@ defmodule Mississippi.Producer.EventsProducer do
       |> Keyword.put(:mandatory, true)
       |> Keyword.put(:headers, headers)
       |> Keyword.put_new(:message_id, generate_message_id())
-      |> Keyword.put_new(:timestamp, DateTime.utc_now() |> DateTime.to_unix())
+      |> Keyword.put_new(:timestamp, DateTime.to_unix(DateTime.utc_now()))
 
     queue_index = :erlang.phash2(sharding_key, queue_count)
     queue_name = "#{queue_prefix}#{queue_index}"
@@ -145,12 +147,12 @@ defmodule Mississippi.Producer.EventsProducer do
     end
   end
 
-  defp schedule_connect() do
+  defp schedule_connect do
     _ = Logger.warning("Retrying connection in #{@connection_backoff} ms")
     Process.send_after(self(), :init_producer, @connection_backoff)
   end
 
-  defp generate_message_id() do
+  defp generate_message_id do
     UUID.uuid4()
   end
 end

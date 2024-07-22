@@ -8,9 +8,7 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
   setup_all do
     start_supervised!({Registry, [keys: :unique, name: Registry.MessageTracker]})
 
-    start_supervised!(
-      {DynamicSupervisor, strategy: :one_for_one, name: MessageTracker.Supervisor}
-    )
+    start_supervised!({DynamicSupervisor, strategy: :one_for_one, name: MessageTracker.Supervisor})
 
     :ok
   end

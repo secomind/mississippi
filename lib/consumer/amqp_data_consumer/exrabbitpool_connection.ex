@@ -1,4 +1,5 @@
 defmodule Mississippi.Consumer.AMQPDataConsumer.ExRabbitPoolConnection do
+  @moduledoc false
   @behaviour Mississippi.Consumer.AMQPDataConsumer.AMQPConnection
 
   alias Mississippi.Consumer.AMQPDataConsumer.State
@@ -7,7 +8,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.ExRabbitPoolConnection do
 
   @consumer_prefetch_count 300
 
-  def adapter(), do: ExRabbitPool.RabbitMQ
+  def adapter, do: ExRabbitPool.RabbitMQ
 
   def init(state) do
     conn = ExRabbitPool.get_connection_worker(:events_consumer_pool)
@@ -18,9 +19,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.ExRabbitPoolConnection do
 
       {:error, reason} ->
         _ =
-          Logger.warning(
-            "Failed to check out channel for consumer on queue #{state.queue_name}: #{inspect(reason)}"
-          )
+          Logger.warning("Failed to check out channel for consumer on queue #{state.queue_name}: #{inspect(reason)}")
 
         {:error, reason}
     end
@@ -35,9 +34,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.ExRabbitPoolConnection do
       {:ok, channel}
     else
       {:error, reason} ->
-        Logger.warning(
-          "Error initializing AMQPDataConsumer on queue #{state.queue_name}: #{inspect(reason)}"
-        )
+        Logger.warning("Error initializing AMQPDataConsumer on queue #{state.queue_name}: #{inspect(reason)}")
 
         # Something went wrong, let's put the channel back where it belongs
         _ = ExRabbitPool.checkin_channel(conn, channel)

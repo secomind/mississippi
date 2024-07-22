@@ -1,4 +1,5 @@
 defmodule Mississippi.Consumer.DataUpdater.State do
+  @moduledoc false
   use TypedStruct
 
   typedstruct do

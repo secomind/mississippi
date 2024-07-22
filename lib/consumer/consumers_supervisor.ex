@@ -1,8 +1,10 @@
 defmodule Mississippi.Consumer.ConsumersSupervisor do
+  @moduledoc false
   use Supervisor
-  require Logger
 
   alias Mississippi.Consumer
+
+  require Logger
 
   def start_link(init_arg) do
     Supervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
@@ -31,7 +33,7 @@ defmodule Mississippi.Consumer.ConsumersSupervisor do
   end
 
   @doc false
-  def init_opts() do
+  def init_opts do
     [
       mississippi_config: [
         type: :keyword_list,

@@ -4,10 +4,12 @@ defmodule Mississippi.Consumer.MessageTracker.Server do
   """
 
   use GenServer, restart: :transient
-  require Logger
+
   alias Mississippi.Consumer.DataUpdater
   alias Mississippi.Consumer.Message
   alias Mississippi.Consumer.MessageTracker.Server.State
+
+  require Logger
 
   @adapter ExRabbitPool.RabbitMQ
   # TODO make this configurable? (Same as DataUpdater)
