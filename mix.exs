@@ -26,14 +26,17 @@ defmodule Mississippi.MixProject do
   defp deps do
     [
       {:amqp, "~> 3.3"},
+      {:credo, "~> 1.0", only: [:dev], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :ci], runtime: false},
       {:efx, "~> 0.1"},
       {:elixir_uuid, "~> 1.2"},
+      {:ex_check, "~> 0.16", only: [:dev], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       # hex.pm package and esl/ex_rabbit_pool do not support amqp version 2.1.
       # This fork is supporting amqp ~> 2.0 and also ~> 3.0.
       {:ex_rabbit_pool, github: "leductam/ex_rabbit_pool"},
       {:hammox, "~> 0.7", only: :test},
+      {:mix_audit, "~> 2.0", only: [:dev], runtime: false},
       {:nimble_options, "~> 1.0"},
       {:pretty_log, "~> 0.1"},
       {:typed_struct, "~> 0.3.0"}

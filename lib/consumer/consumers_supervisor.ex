@@ -10,7 +10,7 @@ defmodule Mississippi.Consumer.ConsumersSupervisor do
 
   @impl true
   def init(init_arg) do
-    Logger.info("ConsumersSupervisor init.", tag: "consumer_sup_init")
+    Logger.info("ConsumersSupervisor init.")
 
     message_handler = init_arg[:message_handler]
 
@@ -25,7 +25,7 @@ defmodule Mississippi.Consumer.ConsumersSupervisor do
       {Consumer.AMQPDataConsumer.Supervisor, queues_config: queues_config}
     ]
 
-    opts = [strategy: :rest_for_one, name: __MODULE__]
+    opts = [strategy: :rest_for_one]
 
     Supervisor.init(children, opts)
   end

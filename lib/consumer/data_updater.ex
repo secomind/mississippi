@@ -57,8 +57,7 @@ defmodule Mississippi.Consumer.DataUpdater do
       other ->
         _ =
           Logger.warning(
-            "Could not start DataUpdater process for sharding_key #{inspect(sharding_key)}: #{inspect(other)}",
-            tag: "data_updater_start_fail"
+            "Could not start DataUpdater process for sharding_key #{inspect(sharding_key)}: #{inspect(other)}"
           )
 
         {:error, :data_updater_start_fail}

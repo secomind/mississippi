@@ -39,8 +39,7 @@ defmodule Mississippi.Consumer.MessageTracker do
       other ->
         _ =
           Logger.warning(
-            "Could not start MessageTracker process for sharding_key #{inspect(sharding_key)}: #{inspect(other)}",
-            tag: "message_tracker_start_fail"
+            "Could not start MessageTracker process for sharding_key #{inspect(sharding_key)}: #{inspect(other)}"
           )
 
         {:error, :message_tracker_start_fail}

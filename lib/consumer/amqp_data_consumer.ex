@@ -15,7 +15,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
 
   # TODO should this be customizable?
   @reconnect_interval 1_000
-  @connection unless Mix.env() == :test, do: ExRabbitPoolConnection, else: MockAMQPConnection
+  @connection if Mix.env() != :test, do: ExRabbitPoolConnection, else: MockAMQPConnection
   @sharding_key "sharding_key"
 
   # API
@@ -128,9 +128,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
       {:ok, channel} ->
         Process.link(channel.pid)
 
-        Logger.debug("AMQPDataConsumer for queue #{state.queue_name} initialized",
-          tag: "data_consumer_init_ok"
-        )
+        Logger.debug("AMQPDataConsumer for queue #{state.queue_name} initialized")
 
         %State{state | channel: channel}
 
@@ -146,8 +144,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
       message
 
     Logger.warning(
-      "Invalid AMQP message: #{inspect(Base.encode64(payload))} #{inspect(headers)} #{inspect(timestamp)} #{inspect(meta)}",
-      tag: "data_consumer_invalid_msg"
+      "Invalid AMQP message: #{inspect(Base.encode64(payload))} #{inspect(headers)} #{inspect(timestamp)} #{inspect(meta)}"
     )
 
     :invalid_msg

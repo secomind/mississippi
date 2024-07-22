@@ -15,7 +15,7 @@ defmodule Mississippi.Consumer.MessageTracker.Server do
 
   def start_link(args) do
     name = Keyword.fetch!(args, :name)
-    _ = Logger.debug("Starting MessageTracker #{inspect(name)}", tag: "message_tracker_start")
+    _ = Logger.debug("Starting MessageTracker #{inspect(name)}")
     GenServer.start_link(__MODULE__, args, name: name)
   end
 
@@ -115,9 +115,7 @@ defmodule Mississippi.Consumer.MessageTracker.Server do
   @impl true
   def terminate(reason, _state) do
     _ =
-      Logger.info("MessageTracker terminating with reason: #{inspect(reason)}",
-        tag: "message_tracker_terminate"
-      )
+      Logger.info("MessageTracker terminating with reason: #{inspect(reason)}")
 
     :ok
   end

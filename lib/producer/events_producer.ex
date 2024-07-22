@@ -11,7 +11,7 @@ defmodule Mississippi.Producer.EventsProducer do
   require Logger
 
   # TODO should these be customizable?
-  @connection_backoff 10000
+  @connection_backoff :timer.seconds(10)
   @adapter ExRabbitPool.RabbitMQ
 
   # API
@@ -93,9 +93,7 @@ defmodule Mississippi.Producer.EventsProducer do
 
   @impl true
   def handle_info({:DOWN, _, :process, _pid, reason}, state) do
-    Logger.warning("RabbitMQ connection lost: #{inspect(reason)}. Trying to reconnect...",
-      tag: "events_producer_conn_lost"
-    )
+    Logger.warning("RabbitMQ connection lost: #{inspect(reason)}. Trying to reconnect...")
 
     {:noreply, init_producer(state)}
   end
@@ -105,7 +103,7 @@ defmodule Mississippi.Producer.EventsProducer do
       {:ok, channel} ->
         Process.monitor(channel.pid)
 
-        Logger.debug("EventsProducer initialized", tag: "event_producer_init_ok")
+        Logger.debug("EventsProducer initialized")
 
         %State{state | channel: channel}
 
@@ -127,10 +125,7 @@ defmodule Mississippi.Producer.EventsProducer do
   defp checkout_channel(conn) do
     with {:error, reason} <- ExRabbitPool.checkout_channel(conn) do
       _ =
-        Logger.warning(
-          "Failed to check out channel for producer: #{inspect(reason)}",
-          tag: "event_producer_channel_checkout_fail"
-        )
+        Logger.warning("Failed to check out channel for producer: #{inspect(reason)}")
 
       {:error, :event_producer_channel_checkout_fail}
     end
@@ -142,10 +137,7 @@ defmodule Mississippi.Producer.EventsProducer do
              type: :direct,
              durable: true
            ) do
-      Logger.warning(
-        "Error declaring EventsProducer default events exchange: #{inspect(reason)}",
-        tag: "event_producer_init_fail"
-      )
+      Logger.warning("Error declaring EventsProducer default events exchange: #{inspect(reason)}")
 
       # Something went wrong, let's put the channel back where it belongs
       _ = ExRabbitPool.checkin_channel(conn, channel)

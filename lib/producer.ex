@@ -47,7 +47,7 @@ defmodule Mississippi.Producer do
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
-    opts = [strategy: :one_for_one, name: Mississippi.Producer.Supervisor]
+    opts = [strategy: :one_for_one]
     Supervisor.init(children, opts)
   end
 

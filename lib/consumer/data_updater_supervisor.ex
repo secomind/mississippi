@@ -8,7 +8,7 @@ defmodule Mississippi.Consumer.DataUpdater.Supervisor do
 
   @impl true
   def init(init_args) do
-    _ = Logger.info("Starting DataUpdater supervisor", tag: "data_updater_supervisor_start")
+    _ = Logger.info("Starting DataUpdater supervisor")
     DynamicSupervisor.init(strategy: :one_for_one, extra_arguments: init_args)
   end
 
@@ -18,9 +18,7 @@ defmodule Mississippi.Consumer.DataUpdater.Supervisor do
 
   def terminate_child(pid) do
     _ =
-      Logger.info("Terminating a DataUpdater",
-        tag: "data_updater_terminate"
-      )
+      Logger.info("Terminating a DataUpdater")
 
     DynamicSupervisor.terminate_child(__MODULE__, pid)
   end

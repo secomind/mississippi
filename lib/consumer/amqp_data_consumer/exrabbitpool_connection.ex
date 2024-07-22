@@ -19,8 +19,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.ExRabbitPoolConnection do
       {:error, reason} ->
         _ =
           Logger.warning(
-            "Failed to check out channel for consumer on queue #{state.queue_name}: #{inspect(reason)}",
-            tag: "channel_checkout_fail"
+            "Failed to check out channel for consumer on queue #{state.queue_name}: #{inspect(reason)}"
           )
 
         {:error, reason}
@@ -37,8 +36,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.ExRabbitPoolConnection do
     else
       {:error, reason} ->
         Logger.warning(
-          "Error initializing AMQPDataConsumer on queue #{state.queue_name}: #{inspect(reason)}",
-          tag: "data_consumer_init_err"
+          "Error initializing AMQPDataConsumer on queue #{state.queue_name}: #{inspect(reason)}"
         )
 
         # Something went wrong, let's put the channel back where it belongs
