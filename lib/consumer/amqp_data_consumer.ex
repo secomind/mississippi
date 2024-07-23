@@ -8,13 +8,14 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   use GenServer
 
   alias AMQP.Channel
+  alias Mississippi.Consumer.AMQPDataConsumer.Effects
   alias Mississippi.Consumer.AMQPDataConsumer.State
   alias Mississippi.Consumer.Message
   alias Mississippi.Consumer.MessageTracker
 
   # TODO should this be customizable?
   @reconnect_interval 1_000
-  @adapter ExRabbitPool.RabbitMQ
+  @adapter unless Mix.env() == :test, do: ExRabbitPool.RabbitMQ, else: MockRabbitMQ
   @sharding_key "sharding_key"
   @consumer_prefetch_count 300
 
@@ -90,7 +91,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
     case message.headers do
       %{@sharding_key => sharding_key_binary} ->
         sharding_key = :erlang.binary_to_term(sharding_key_binary)
-        {:ok, mt_pid} = MessageTracker.get_message_tracker(sharding_key)
+        {:ok, mt_pid} = Effects.get_message_tracker(sharding_key)
 
         new_monitors = maybe_update_monitors(mt_pid, monitors)
 
@@ -101,7 +102,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
       _ ->
         handle_invalid_msg(message)
         # ACK invalid msg to discard them
-        @adapter.ack(channel, meta.delivery_tag)
+        @adapter.ack(channel, meta.delivery_tag, [])
         {:noreply, state}
     end
   end
@@ -124,9 +125,9 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   end
 
   defp init_consume(state) do
-    conn = ExRabbitPool.get_connection_worker(:events_consumer_pool)
+    conn = Effects.get_connection_worker(:events_consumer_pool)
 
-    case ExRabbitPool.checkout_channel(conn) do
+    case Effects.checkout_channel(conn) do
       {:ok, channel} ->
         try_to_setup_consume(channel, conn, state)
 
@@ -148,7 +149,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
 
     with :ok <- @adapter.qos(channel, prefetch_count: @consumer_prefetch_count),
          {:ok, _queue} <- @adapter.declare_queue(channel, queue_name, durable: true),
-         {:ok, _consumer_tag} <- @adapter.consume(channel, queue_name, self()) do
+         {:ok, _consumer_tag} <- @adapter.consume(channel, queue_name, self(), []) do
       Process.link(channel_pid)
 
       _ =
@@ -187,5 +188,37 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
     Enum.reduce(headers, %{}, fn {key, _type, value}, acc ->
       Map.put(acc, key, value)
     end)
+  end
+end
+
+defmodule Mississippi.Consumer.AMQPDataConsumer.Effects do
+  use Efx
+
+  alias Mississippi.Consumer.MessageTracker
+
+  @doc false
+  @spec get_message_tracker(term()) :: {:ok, pid()}
+  defeffect get_message_tracker(sharding_key) do
+    MessageTracker.get_message_tracker(sharding_key)
+  end
+
+  @doc false
+  # returns an exrabbitpool conn
+  @spec get_connection_worker(atom()) :: pid()
+  defeffect get_connection_worker(pool_name) do
+    ExRabbitPool.get_connection_worker(pool_name)
+  end
+
+  @doc false
+  @spec checkout_channel(pid()) ::
+          {:ok, channel :: AMQP.Channel.t()} | {:error, :disconnected | :out_of_channels}
+  defeffect checkout_channel(conn) do
+    ExRabbitPool.checkout_channel(conn)
+  end
+
+  @doc false
+  @spec checkin_channel(conn :: pid(), channel :: AMQP.Channel.t()) :: :ok
+  defeffect checkin_channel(conn, channel) do
+    ExRabbitPool.checkin_channel(conn, channel)
   end
 end
