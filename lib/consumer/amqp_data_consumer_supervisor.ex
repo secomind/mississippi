@@ -27,10 +27,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Supervisor do
 
       init_args = [
         queue_name: queue_name,
-        queue_index: queue_index,
-        range_start: queue_range_start,
-        range_end: queue_range_end,
-        queue_total_count: queues_config[:total_count]
+        queue_index: queue_index
       ]
 
       Supervisor.child_spec({AMQPDataConsumer, init_args}, id: {AMQPDataConsumer, queue_index})

@@ -17,7 +17,7 @@ defmodule Mississippi.Consumer.DataUpdater.Handler do
 
   @doc """
   Invoked when a message is received. A return value of `{:ok, result, state}` will make Mississippi ack the message,
-  while `{:error, reason, state}` will make Mississippi discard it.
+  while `{:error, reason, state}` will make Mississippi reject it.
   """
   @callback handle_message(
               payload :: term(),
@@ -26,7 +26,8 @@ defmodule Mississippi.Consumer.DataUpdater.Handler do
               timestamp :: term(),
               state :: handler_state
             ) ::
-              {:ok, result :: term(), new_state :: handler_state} | {:error, reason :: term()}
+              {:ok, result :: term(), new_state :: handler_state}
+              | {:error, reason :: term(), state :: handler_state}
 
   @doc """
   Invoked when an information that is not a message is received.
