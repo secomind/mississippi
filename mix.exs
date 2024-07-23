@@ -27,6 +27,7 @@ defmodule Mississippi.MixProject do
     [
       {:amqp, "~> 3.3"},
       {:dialyxir, "~> 1.4", only: [:dev, :ci], runtime: false},
+      {:efx, "~> 0.1"},
       {:elixir_uuid, "~> 1.2"},
       {:excoveralls, "~> 0.18", only: :test},
       # hex.pm package and esl/ex_rabbit_pool do not support amqp version 2.1.
