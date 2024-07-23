@@ -2,6 +2,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
   use EfxCase
 
   alias Mississippi.Consumer.AMQPDataConsumer
+  alias Mississippi.Consumer.MessageTracker
   alias AMQP.Channel
 
   require Logger
@@ -13,10 +14,11 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
   setup_all do
     start_supervised!({Registry, [keys: :unique, name: Registry.AMQPDataConsumer]})
 
-    MockRabbitMQ
-    |> stub(:qos, fn _, _ -> :ok end)
-    |> stub(:declare_queue, fn _, _, _ -> {:ok, :queue} end)
-    |> stub(:consume, fn _, _, _, _ -> {:ok, :tag} end)
+    mock_channel = %Channel{pid: self()}
+
+    MockAMQPConnection
+    |> stub(:init, fn _ -> {:ok, mock_channel} end)
+    |> stub(:adapter, fn -> ExRabbitPool.FakeRabbitMQ end)
 
     Mox.set_mox_global()
 
@@ -26,16 +28,11 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
   doctest Mississippi.Consumer.AMQPDataConsumer
 
   setup do
-    test_pid = self()
-
     process_1 = Process.spawn(&wait_for_message/0, [])
     :erlang.trace(process_1, true, [:receive])
 
     process_2 = Process.spawn(&wait_for_message/0, [])
     :erlang.trace(process_2, true, [:receive])
-
-    bind(AMQPDataConsumer.Effects, :get_connection_worker, fn _ -> test_pid end)
-    bind(AMQPDataConsumer.Effects, :checkout_channel, fn _ -> {:ok, %Channel{pid: test_pid}} end)
 
     %{
       sharding_key_1: process_1,
@@ -50,11 +47,14 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
     data_consumer_pid =
       start_supervised!({AMQPDataConsumer, queue_index: 0, queue_name: "queue_0"})
 
-    payload_1 = "payload_#{System.unique_integer()}"
     sharding_key_1 = :sharding_key_1
-    meta_1 = meta_fixture(sharding_key_1)
+    sharding_key_2 = :sharding_key_2
 
-    bind(AMQPDataConsumer.Effects, :get_message_tracker, fn _ -> {:ok, tracker_1} end, calls: 1)
+    bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, tracker_1} end, calls: 1)
+    bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, tracker_2} end, calls: 1)
+
+    payload_1 = "payload_#{System.unique_integer()}"
+    meta_1 = meta_fixture(sharding_key_1)
 
     send(data_consumer_pid, {:basic_deliver, payload_1, meta_1})
 
@@ -63,11 +63,8 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
     assert message_1.payload == payload_1
     assert sharding_key_from(message_1) == sharding_key_1
 
-    sharding_key_2 = :sharding_key_2
     payload_2 = "payload_#{System.unique_integer()}"
     meta_2 = meta_fixture(sharding_key_2)
-
-    bind(AMQPDataConsumer.Effects, :get_message_tracker, fn _ -> {:ok, tracker_2} end, calls: 1)
 
     send(data_consumer_pid, {:basic_deliver, payload_2, meta_2})
 
