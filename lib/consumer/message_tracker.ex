@@ -11,6 +11,7 @@ defmodule Mississippi.Consumer.MessageTracker do
   alias Mississippi.Consumer.MessageTracker
   alias Mississippi.Consumer.Message
   require Logger
+  use Efx
 
   @doc """
   Provides a reference to the MessageTracker process that will track the set of messages identified by
@@ -18,7 +19,7 @@ defmodule Mississippi.Consumer.MessageTracker do
   """
   @spec get_message_tracker(sharding_key :: term()) ::
           {:ok, pid()} | {:error, :message_tracker_start_fail}
-  def get_message_tracker(sharding_key) do
+  defeffect get_message_tracker(sharding_key) do
     name = {:via, Registry, {Registry.MessageTracker, {:sharding_key, sharding_key}}}
 
     # TODO bring back :offload_start (?)

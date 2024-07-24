@@ -8,15 +8,15 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   use GenServer
 
   alias AMQP.Channel
+  alias Mississippi.Consumer.AMQPDataConsumer.ExRabbitPoolConnection
   alias Mississippi.Consumer.AMQPDataConsumer.State
   alias Mississippi.Consumer.Message
   alias Mississippi.Consumer.MessageTracker
 
   # TODO should this be customizable?
   @reconnect_interval 1_000
-  @adapter ExRabbitPool.RabbitMQ
+  @connection unless Mix.env() == :test, do: ExRabbitPoolConnection, else: MockAMQPConnection
   @sharding_key "sharding_key"
-  @consumer_prefetch_count 300
 
   # API
 
@@ -40,10 +40,10 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   end
 
   @impl true
-  def handle_continue(:init_consume, state), do: init_consume(state)
+  def handle_continue(:init_consume, state), do: {:noreply, init_consume(state)}
 
   @impl true
-  def handle_info(:init_consume, state), do: init_consume(state)
+  def handle_info(:init_consume, state), do: {:noreply, init_consume(state)}
 
   # This is a Message Tracker deactivating itself normally, just remove its monitor.
   # In case a messageTracker crashes, we want to crash too, so that messages are requeued.
@@ -101,7 +101,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
       _ ->
         handle_invalid_msg(message)
         # ACK invalid msg to discard them
-        @adapter.ack(channel, meta.delivery_tag)
+        @connection.adapter().ack(channel, meta.delivery_tag, [])
         {:noreply, state}
     end
   end
@@ -124,50 +124,20 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   end
 
   defp init_consume(state) do
-    conn = ExRabbitPool.get_connection_worker(:events_consumer_pool)
-
-    case ExRabbitPool.checkout_channel(conn) do
+    case @connection.init(state) do
       {:ok, channel} ->
-        try_to_setup_consume(channel, conn, state)
+        Process.link(channel.pid)
 
-      {:error, reason} ->
-        _ =
-          Logger.warning(
-            "Failed to check out channel for consumer on queue #{state.queue_name}: #{inspect(reason)}",
-            tag: "channel_checkout_fail"
-          )
-
-        schedule_connect()
-        {:noreply, %State{state | channel: nil}}
-    end
-  end
-
-  defp try_to_setup_consume(channel, conn, state) do
-    %Channel{pid: channel_pid} = channel
-    %State{queue_name: queue_name} = state
-
-    with :ok <- @adapter.qos(channel, prefetch_count: @consumer_prefetch_count),
-         {:ok, _queue} <- @adapter.declare_queue(channel, queue_name, durable: true),
-         {:ok, _consumer_tag} <- @adapter.consume(channel, queue_name, self()) do
-      Process.link(channel_pid)
-
-      _ =
-        Logger.debug("AMQPDataConsumer for queue #{queue_name} initialized",
+        Logger.debug("AMQPDataConsumer for queue #{state.queue_name} initialized",
           tag: "data_consumer_init_ok"
         )
 
-      {:noreply, %State{state | channel: channel}}
-    else
-      {:error, reason} ->
-        Logger.warning(
-          "Error initializing AMQPDataConsumer on queue #{state.queue_name}: #{inspect(reason)}",
-          tag: "data_consumer_init_err"
-        )
+        %State{state | channel: channel}
 
-        # Something went wrong, let's put the channel back where it belongs
-        _ = ExRabbitPool.checkin_channel(conn, channel)
+      {:error, _reason} ->
         schedule_connect()
-        {:noreply, %State{state | channel: nil}}
+
+        %State{state | channel: nil}
     end
   end
 
