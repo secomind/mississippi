@@ -5,7 +5,7 @@ defmodule Mississippi.Producer.EventsProducer do
 
   use GenServer
 
-  alias AMQP.Channel
+  alias AMQP.Basic
   alias Mississippi.Producer.EventsProducer.Options
   alias Mississippi.Producer.EventsProducer.State
   require Logger
@@ -24,10 +24,8 @@ defmodule Mississippi.Producer.EventsProducer do
   Publish a message on Mississippi AMQP queues. The call is blocking, as only one message at a time can be published.
   """
   @type publish_opts() :: [unquote(NimbleOptions.option_typespec(Options.publish_opts()))]
-  @spec publish(
-          payload :: binary(),
-          opts :: publish_opts()
-        ) :: :ok | {:error, reason :: :blocked | :closing}
+  @spec publish(payload :: binary(), opts :: publish_opts()) ::
+          :ok | {:error, :reconnecting} | Basic.error()
   def publish(payload, opts) do
     valid_opts = NimbleOptions.validate!(opts, Options.publish_opts())
     GenServer.call(__MODULE__, {:publish, payload, valid_opts})
@@ -41,19 +39,20 @@ defmodule Mississippi.Producer.EventsProducer do
     queue_count = init_opts[:total_count]
     queue_prefix = init_opts[:prefix]
 
-    case init_producer(events_exchange_name) do
-      {:ok, channel} ->
-        {:ok,
-         %State{
-           channel: channel,
-           events_exchange_name: events_exchange_name,
-           queue_total_count: queue_count,
-           queue_prefix: queue_prefix
-         }}
+    state = %State{
+      channel: nil,
+      events_exchange_name: events_exchange_name,
+      queue_total_count: queue_count,
+      queue_prefix: queue_prefix
+    }
 
-      {:error, reason} ->
-        {:stop, reason}
-    end
+    {:ok, init_producer(state)}
+  end
+
+  @impl true
+  def handle_call({:publish, _, _}, _from, %State{channel: nil} = state) do
+    # We're currently in reconnecting state
+    {:reply, {:error, :reconnecting}, state}
   end
 
   @impl true
@@ -90,34 +89,37 @@ defmodule Mississippi.Producer.EventsProducer do
   end
 
   @impl true
+  def handle_info(:init_producer, state), do: {:noreply, init_producer(state)}
+
+  @impl true
   def handle_info({:DOWN, _, :process, _pid, reason}, state) do
     Logger.warning("RabbitMQ connection lost: #{inspect(reason)}. Trying to reconnect...",
       tag: "events_producer_conn_lost"
     )
 
-    case init_producer(state.events_exchange_name) do
+    {:noreply, init_producer(state)}
+  end
+
+  defp init_producer(state) do
+    case init_producer_channel(state) do
       {:ok, channel} ->
-        {:noreply, channel}
+        Process.monitor(channel.pid)
+
+        Logger.debug("EventsProducer initialized", tag: "event_producer_init_ok")
+
+        %State{state | channel: channel}
 
       {:error, _reason} ->
         schedule_connect()
-        {:noreply, :not_connected}
+        %State{state | channel: nil}
     end
   end
 
-  defp init_producer(events_exchange_name) do
+  defp init_producer_channel(state) do
     conn = ExRabbitPool.get_connection_worker(:events_producer_pool)
 
     with {:ok, channel} <- checkout_channel(conn),
-         :ok <- declare_events_exchange(conn, channel, events_exchange_name) do
-      %Channel{pid: channel_pid} = channel
-      _ref = Process.monitor(channel_pid)
-
-      _ =
-        Logger.debug("EventsProducer initialized",
-          tag: "event_producer_init_ok"
-        )
-
+         :ok <- declare_events_exchange(conn, channel, state.events_exchange_name) do
       {:ok, channel}
     end
   end
@@ -153,7 +155,7 @@ defmodule Mississippi.Producer.EventsProducer do
 
   defp schedule_connect() do
     _ = Logger.warning("Retrying connection in #{@connection_backoff} ms")
-    Process.send_after(@connection_backoff, self(), :init)
+    Process.send_after(self(), :init_producer, @connection_backoff)
   end
 
   defp generate_message_id() do
