@@ -33,6 +33,13 @@ defmodule Mississippi.Producer.EventsProducer.Options do
                 A string prefix for naming the queues on which Mississippi messages
                 will be sharded. Must be the same as the one used by the consumer.
                 """
+              ],
+              connection: [
+                type: :atom,
+                doc: """
+                AMQP Connection module.
+                Defaults to Mississippi.Producer.EventsProducer.ExRabbitPoolConnection.
+                """
               ]
             ]
           ]

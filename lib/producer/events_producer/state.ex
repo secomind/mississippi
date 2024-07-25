@@ -7,5 +7,6 @@ defmodule Mississippi.Producer.EventsProducer.State do
     field :queue_prefix, String.t(), enforce: true
     field :queue_total_count, pos_integer(), enforce: true
     field :channel, term()
+    field :connection, module()
   end
 end
