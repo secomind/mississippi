@@ -8,6 +8,7 @@ defmodule Mississippi.Consumer.DataUpdater do
   """
 
   use GenServer, restart: :transient
+  use Efx
 
   alias Mississippi.Consumer.DataUpdater
   alias Mississippi.Consumer.DataUpdater.State
@@ -43,7 +44,7 @@ defmodule Mississippi.Consumer.DataUpdater do
   """
   @spec get_data_updater_process(sharding_key :: term()) ::
           {:ok, pid()} | {:error, :data_updater_start_fail}
-  def get_data_updater_process(sharding_key) do
+  defeffect get_data_updater_process(sharding_key) do
     # TODO bring back :offload_start (?)
     case DataUpdater.Supervisor.start_child({DataUpdater, sharding_key: sharding_key}) do
       {:ok, pid} ->
