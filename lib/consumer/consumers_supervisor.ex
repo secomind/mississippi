@@ -1,8 +1,10 @@
 defmodule Mississippi.Consumer.ConsumersSupervisor do
+  @moduledoc false
   use Supervisor
-  require Logger
 
   alias Mississippi.Consumer
+
+  require Logger
 
   def start_link(init_arg) do
     Supervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
@@ -10,7 +12,7 @@ defmodule Mississippi.Consumer.ConsumersSupervisor do
 
   @impl true
   def init(init_arg) do
-    Logger.info("ConsumersSupervisor init.", tag: "consumer_sup_init")
+    Logger.info("ConsumersSupervisor init.")
 
     message_handler = init_arg[:message_handler]
 
@@ -25,13 +27,13 @@ defmodule Mississippi.Consumer.ConsumersSupervisor do
       {Consumer.AMQPDataConsumer.Supervisor, queues_config: queues_config}
     ]
 
-    opts = [strategy: :rest_for_one, name: __MODULE__]
+    opts = [strategy: :rest_for_one]
 
     Supervisor.init(children, opts)
   end
 
   @doc false
-  def init_opts() do
+  def init_opts do
     [
       mississippi_config: [
         type: :keyword_list,

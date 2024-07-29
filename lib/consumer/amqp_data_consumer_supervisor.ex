@@ -1,4 +1,5 @@
 defmodule Mississippi.Consumer.AMQPDataConsumer.Supervisor do
+  @moduledoc false
   use Supervisor
 
   alias Mississippi.Consumer.AMQPDataConsumer
@@ -12,7 +13,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Supervisor do
     children =
       amqp_data_consumers_childspecs(init_arg[:queues_config])
 
-    opts = [strategy: :one_for_one, name: __MODULE__]
+    opts = [strategy: :one_for_one]
 
     Supervisor.init(children, opts)
   end

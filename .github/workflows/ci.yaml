@@ -1,0 +1,73 @@
+name: CI
+
+on: [pull_request, push]
+
+jobs:
+  lint:
+    name: Lint with `mix check`
+    runs-on: ubuntu-24.04
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install OTP and Elixir
+      uses: erlef/setup-beam@v1
+      id: beam
+      with:
+        version-file: .tool-versions
+        version-type: strict
+
+    - name: Cache deps and build
+      uses: actions/cache@v3
+      with:
+        path: |
+          deps
+          _build
+        key: "lint-${{ runner.os }}-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}"
+
+    - name: Install and compile dependencies
+      run: |
+        mix deps.get
+        mix deps.compile
+
+    - name: Run check
+      run: mix check
+
+  test:
+    name: Run `mix test`
+    env:
+      MIX_ENV: test
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        show-progress: false
+
+    - name: Install OTP and Elixir
+      uses: erlef/setup-beam@v1
+      id: beam
+      with:
+        version-file: .tool-versions
+        version-type: strict
+
+    - name: Cache dependencies
+      id: cache-deps
+      uses: actions/cache@v3
+      with:
+        path: |
+          deps
+          _build
+        key: "test-${{ runner.os }}-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}"
+
+    - name: Install and compile dependencies
+      run: |
+        mix deps.get
+        mix deps.compile
+
+    - name: Check for warnings in test support modules
+      run: mix compile --warnings-as-errors
+
+    - name: Test
+      run: mix test --warnings-as-errors

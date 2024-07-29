@@ -4,7 +4,6 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   sends them to MessageTrackers according to the message sharding key.
   """
 
-  require Logger
   use GenServer
 
   alias AMQP.Channel
@@ -13,9 +12,11 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   alias Mississippi.Consumer.Message
   alias Mississippi.Consumer.MessageTracker
 
+  require Logger
+
   # TODO should this be customizable?
   @reconnect_interval 1_000
-  @connection unless Mix.env() == :test, do: ExRabbitPoolConnection, else: MockAMQPConnection
+  @connection if Mix.env() == :test, do: MockAMQPConnection, else: ExRabbitPoolConnection
   @sharding_key "sharding_key"
 
   # API
@@ -47,10 +48,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
 
   # This is a Message Tracker deactivating itself normally, just remove its monitor.
   # In case a messageTracker crashes, we want to crash too, so that messages are requeued.
-  def handle_info(
-        {:DOWN, _, :process, pid, :normal},
-        %State{channel: %Channel{pid: chan_pid}} = state
-      )
+  def handle_info({:DOWN, _, :process, pid, :normal}, %State{channel: %Channel{pid: chan_pid}} = state)
       when pid != chan_pid do
     %State{monitors: monitors} = state
     new_monitors = List.delete(monitors, pid)
@@ -119,7 +117,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
     {:via, Registry, {Registry.AMQPDataConsumer, {:queue_index, queue_index}}}
   end
 
-  defp schedule_connect() do
+  defp schedule_connect do
     Process.send_after(self(), :init_consume, @reconnect_interval)
   end
 
@@ -128,9 +126,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
       {:ok, channel} ->
         Process.link(channel.pid)
 
-        Logger.debug("AMQPDataConsumer for queue #{state.queue_name} initialized",
-          tag: "data_consumer_init_ok"
-        )
+        Logger.debug("AMQPDataConsumer for queue #{state.queue_name} initialized")
 
         %State{state | channel: channel}
 
@@ -146,8 +142,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
       message
 
     Logger.warning(
-      "Invalid AMQP message: #{inspect(Base.encode64(payload))} #{inspect(headers)} #{inspect(timestamp)} #{inspect(meta)}",
-      tag: "data_consumer_invalid_msg"
+      "Invalid AMQP message: #{inspect(Base.encode64(payload))} #{inspect(headers)} #{inspect(timestamp)} #{inspect(meta)}"
     )
 
     :invalid_msg

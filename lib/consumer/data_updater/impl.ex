@@ -1,4 +1,5 @@
 defmodule Mississippi.Consumer.DataUpdater.Handler.Impl do
+  @moduledoc false
   @behaviour Mississippi.Consumer.DataUpdater.Handler
 
   @impl true
@@ -10,7 +11,7 @@ defmodule Mississippi.Consumer.DataUpdater.Handler.Impl do
   @impl true
   def handle_message(payload, headers, message_id, timestamp, state) do
     IO.puts(
-      "Received message #{inspect(message_id)} with payload #{inspect(payload)} and headers #{inspect(headers)} at #{inspect(timestamp |> DateTime.from_unix!())}"
+      "Received message #{inspect(message_id)} with payload #{inspect(payload)} and headers #{inspect(headers)} at #{inspect(DateTime.from_unix!(timestamp))}"
     )
 
     {:ok, :ok, state}

@@ -1,4 +1,5 @@
 defmodule Mississippi.Producer.EventsProducer.State do
+  @moduledoc false
   use TypedStruct
 
   typedstruct do

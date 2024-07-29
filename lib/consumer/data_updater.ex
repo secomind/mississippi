@@ -9,10 +9,11 @@ defmodule Mississippi.Consumer.DataUpdater do
 
   use GenServer, restart: :transient
 
-  alias Mississippi.Consumer.MessageTracker
   alias Mississippi.Consumer.DataUpdater
   alias Mississippi.Consumer.DataUpdater.State
   alias Mississippi.Consumer.Message
+  alias Mississippi.Consumer.MessageTracker
+
   require Logger
 
   # TODO make this configurable?
@@ -57,8 +58,7 @@ defmodule Mississippi.Consumer.DataUpdater do
       other ->
         _ =
           Logger.warning(
-            "Could not start DataUpdater process for sharding_key #{inspect(sharding_key)}: #{inspect(other)}",
-            tag: "data_updater_start_fail"
+            "Could not start DataUpdater process for sharding_key #{inspect(sharding_key)}: #{inspect(other)}"
           )
 
         {:error, :data_updater_start_fail}
@@ -126,9 +126,7 @@ defmodule Mississippi.Consumer.DataUpdater do
 
       {:error, reason, _state} ->
         _ =
-          Logger.warning(
-            "Error handling message #{inspect(meta.message_id)}, reason #{inspect(reason)}"
-          )
+          Logger.warning("Error handling message #{inspect(meta.message_id)}, reason #{inspect(reason)}")
 
         {:ok, message_tracker} = MessageTracker.get_message_tracker(state.sharding_key)
         MessageTracker.reject(message_tracker, message)

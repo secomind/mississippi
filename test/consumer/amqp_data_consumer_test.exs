@@ -1,15 +1,15 @@
 defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
   use EfxCase
 
-  alias Mississippi.Consumer.AMQPDataConsumer
-  alias Mississippi.Consumer.MessageTracker
-  alias AMQP.Channel
-
-  require Logger
-
   # We use Mox here because we don't care about the type safety
   # guarantees of Hammox
   import Mox
+
+  alias AMQP.Channel
+  alias Mississippi.Consumer.AMQPDataConsumer
+  alias Mississippi.Consumer.MessageTracker
+
+  require Logger
 
   setup_all do
     start_supervised!({Registry, [keys: :unique, name: Registry.AMQPDataConsumer]})
