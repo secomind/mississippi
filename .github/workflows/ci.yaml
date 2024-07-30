@@ -33,8 +33,8 @@ jobs:
     - name: Run check
       run: mix check
 
-  test:
-    name: Run `mix test`
+  unit-test:
+    name: Run `mix test --only unit`
     env:
       MIX_ENV: test
     runs-on: ubuntu-24.04
@@ -59,7 +59,7 @@ jobs:
         path: |
           deps
           _build
-        key: "test-${{ runner.os }}-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}"
+        key: "unit-test-${{ runner.os }}-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}"
 
     - name: Install and compile dependencies
       run: |
@@ -70,4 +70,49 @@ jobs:
       run: mix compile --warnings-as-errors
 
     - name: Test
-      run: mix test --warnings-as-errors
+      run: mix test --only unit --warnings-as-errors
+
+  integration-test:
+    name: Run `mix test --only integration`
+    env:
+      MIX_ENV: test
+    runs-on: ubuntu-24.04
+    services:
+      rabbitmq:
+        image: "rabbitmq:3.8.34-management"
+        ports:
+        - 5672:5672
+        - 15672:15672
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        show-progress: false
+
+    - name: Install OTP and Elixir
+      uses: erlef/setup-beam@v1
+      id: beam
+      with:
+        version-file: .tool-versions
+        version-type: strict
+
+    - name: Cache dependencies
+      id: cache-deps
+      uses: actions/cache@v3
+      with:
+        path: |
+          deps
+          _build
+        key: "integration-test-${{ runner.os }}-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('**/mix.lock') }}"
+
+    - name: Install and compile dependencies
+      run: |
+        mix deps.get
+        mix deps.compile
+
+    - name: Check for warnings in test support modules
+      run: mix compile --warnings-as-errors
+
+    - name: Test
+      run: mix test --only integration --warnings-as-errors
