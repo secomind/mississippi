@@ -6,5 +6,6 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.State do
     field :queue_name, String.t(), enforce: true
     field :monitors, list(), enforce: true
     field :channel, term()
+    field :connection, module()
   end
 end

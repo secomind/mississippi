@@ -16,7 +16,6 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
 
   # TODO should this be customizable?
   @reconnect_interval 1_000
-  @connection if Mix.env() == :test, do: MockAMQPConnection, else: ExRabbitPoolConnection
   @sharding_key "sharding_key"
 
   # API
@@ -31,8 +30,10 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   @impl true
   def init(args) do
     queue_name = Keyword.fetch!(args, :queue_name)
+    connection = Keyword.get(args, :connection, ExRabbitPoolConnection)
 
     state = %State{
+      connection: connection,
       queue_name: queue_name,
       monitors: []
     }
@@ -99,7 +100,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
       _ ->
         handle_invalid_msg(message)
         # ACK invalid msg to discard them
-        @connection.adapter().ack(channel, meta.delivery_tag, [])
+        state.connection.adapter().ack(channel, meta.delivery_tag, [])
         {:noreply, state}
     end
   end
@@ -122,7 +123,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   end
 
   defp init_consume(state) do
-    case @connection.init(state) do
+    case state.connection.init(state) do
       {:ok, channel} ->
         Process.link(channel.pid)
 

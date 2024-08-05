@@ -35,10 +35,9 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
       queue_index: queue_index
     } do
       data_consumer_pid =
-        start_supervised!(
-          {AMQPDataConsumer, queue_index: queue_index, queue_name: "queue_#{queue_index}"},
-          id: {AMQPDataConsumer, queue_index}
-        )
+        queue_index
+        |> amqp_data_consumer_fixture()
+        |> start_supervised!()
 
       sharding_key_1 = get_sharding_key()
       sharding_key_2 = get_sharding_key()
@@ -84,10 +83,9 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
       meta: meta
     } do
       data_consumer_pid =
-        start_supervised!(
-          {AMQPDataConsumer, [queue_index: queue_index, queue_name: "queue_#{queue_index}"]},
-          id: {AMQPDataConsumer, queue_index}
-        )
+        queue_index
+        |> amqp_data_consumer_fixture()
+        |> start_supervised!()
 
       bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end, calls: 1)
 
@@ -113,10 +111,9 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
       meta: meta
     } do
       data_consumer_pid =
-        start_supervised!(
-          {AMQPDataConsumer, [queue_index: queue_index, queue_name: "queue_#{queue_index}"]},
-          id: {AMQPDataConsumer, queue_index}
-        )
+        queue_index
+        |> amqp_data_consumer_fixture()
+        |> start_supervised!()
 
       bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end, calls: 1)
 
@@ -143,12 +140,10 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
     } do
       Process.flag(:trap_exit, true)
 
-      {:ok, data_consumer_pid} =
-        GenServer.start(
-          AMQPDataConsumer,
-          [queue_index: queue_index, queue_name: "queue_#{queue_index}"],
-          id: {AMQPDataConsumer, queue_index}
-        )
+      data_consumer_pid =
+        queue_index
+        |> amqp_data_consumer_fixture()
+        |> start_supervised!()
 
       consumer_ref = Process.monitor(data_consumer_pid)
 
@@ -213,6 +208,20 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
         {"sharding_key", "binary", :erlang.term_to_binary(sharding_key)}
       ],
       timestamp: DateTime.utc_now()
+    }
+  end
+
+  defp amqp_data_consumer_fixture(queue_index) do
+    start_link_args =
+      [
+        queue_index: queue_index,
+        queue_name: "queue_#{queue_index}",
+        connection: MockAMQPConnection
+      ]
+
+    %{
+      id: {AMQPDataConsumer, queue_index},
+      start: {AMQPDataConsumer, :start_link, [start_link_args]}
     }
   end
 
