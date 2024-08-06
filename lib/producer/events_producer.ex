@@ -12,9 +12,6 @@ defmodule Mississippi.Producer.EventsProducer do
 
   require Logger
 
-  # TODO should these be customizable?
-  @connection_backoff :timer.seconds(10)
-
   # API
 
   def start_link(args) do
@@ -40,13 +37,15 @@ defmodule Mississippi.Producer.EventsProducer do
     queue_count = init_opts[:total_count]
     queue_prefix = init_opts[:prefix]
     connection = Keyword.get(init_opts, :connection, ExRabbitPoolConnection)
+    reconnection_backoff_ms = Keyword.get(init_opts, :reconnection_backoff_ms, :timer.seconds(10))
 
     state = %State{
       channel: nil,
       events_exchange_name: events_exchange_name,
       queue_total_count: queue_count,
       queue_prefix: queue_prefix,
-      connection: connection
+      connection: connection,
+      reconnection_backoff_ms: reconnection_backoff_ms
     }
 
     {:ok, init_producer(state)}
@@ -121,14 +120,14 @@ defmodule Mississippi.Producer.EventsProducer do
         %State{state | channel: channel}
 
       {:error, _reason} ->
-        schedule_connect()
+        schedule_connect(state.reconnection_backoff_ms)
         %State{state | channel: nil}
     end
   end
 
-  defp schedule_connect do
-    _ = Logger.warning("Retrying connection in #{@connection_backoff} ms")
-    Process.send_after(self(), :init_producer, @connection_backoff)
+  defp schedule_connect(backoff) do
+    _ = Logger.warning("Retrying connection in #{backoff} ms")
+    Process.send_after(self(), :init_producer, backoff)
   end
 
   defp generate_message_id do
