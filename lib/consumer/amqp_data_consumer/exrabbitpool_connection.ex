@@ -1,6 +1,6 @@
 defmodule Mississippi.Consumer.AMQPDataConsumer.ExRabbitPoolConnection do
   @moduledoc false
-  @behaviour Mississippi.Consumer.AMQPDataConsumer.AMQPConnection
+  @behaviour Mississippi.AMQPConnection
 
   alias Mississippi.Consumer.AMQPDataConsumer.State
 

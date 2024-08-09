@@ -33,6 +33,19 @@ defmodule Mississippi.Producer.EventsProducer.Options do
                 A string prefix for naming the queues on which Mississippi messages
                 will be sharded. Must be the same as the one used by the consumer.
                 """
+              ],
+              reconnection_backoff_ms: [
+                type: :integer,
+                doc: """
+                Backoff between reconnection attempts. Defaults to 10 seconds.
+                """
+              ],
+              connection: [
+                type: :atom,
+                doc: """
+                AMQP Connection module.
+                Defaults to Mississippi.Producer.EventsProducer.ExRabbitPoolConnection.
+                """
               ]
             ]
           ]

@@ -1,10 +1,9 @@
-defmodule Mississippi.Consumer.AMQPDataConsumer.AMQPConnection do
+defmodule Mississippi.AMQPConnection do
   @moduledoc """
   A behaviour module to for implementing a DataConsumer AMQP connection.
   """
 
   alias AMQP.Channel
-  alias Mississippi.Consumer.AMQPDataConsumer.State
 
   @doc """
   The adapter module for the AMQP connection
@@ -15,5 +14,5 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.AMQPConnection do
   Initializes the AMQP connection.
   Returns `{:ok, channel}` if it was initialized successfully, or `{:error, reason}` if it was not.
   """
-  @callback init(state :: State.t()) :: {:ok, Channel.t()} | {:error, reason :: term()}
+  @callback init(state :: term()) :: {:ok, Channel.t()} | {:error, reason :: term()}
 end
