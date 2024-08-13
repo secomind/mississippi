@@ -88,7 +88,7 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
       message: message,
       message_tracker: message_tracker
     } do
-      expect(MockMessageHandler, :handle_message, fn _, _, _, _, state -> {:ok, :ok, state} end)
+      expect(MockMessageHandler, :handle_message, fn _, _, _, _, state -> {:ack, :ok, state} end)
 
       {:ok, data_updater_pid} = DataUpdater.get_data_updater_process(sharding_key)
 
@@ -108,7 +108,7 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
       message_tracker: message_tracker
     } do
       expect(MockMessageHandler, :handle_message, fn _, _, _, _, state ->
-        {:error, :aaaa, state}
+        {:discard, :aaaa, state}
       end)
 
       {:ok, data_updater_pid} = DataUpdater.get_data_updater_process(sharding_key)
@@ -120,6 +120,31 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
       DataUpdater.handle_message(data_updater_pid, message)
 
       assert_receive {:trace, ^message_tracker, :receive, {_, {_, _}, {:reject, ^message}}}
+    end
+
+    @tag :data_updater_message_handling
+    test "terminating when requested", %{
+      sharding_key: sharding_key,
+      message: message,
+      message_tracker: message_tracker
+    } do
+      Process.flag(:trap_exit, true)
+
+      expect(MockMessageHandler, :handle_message, fn _, _, _, _, state ->
+        {:stop, :some_reason, :ack, state}
+      end)
+
+      expect(MockMessageHandler, :terminate, fn _, _ -> :ok end)
+
+      {:ok, data_updater_pid} = DataUpdater.get_data_updater_process(sharding_key)
+
+      ref = Process.monitor(data_updater_pid)
+      bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end, calls: 1)
+
+      DataUpdater.handle_message(data_updater_pid, message)
+
+      assert_receive {:DOWN, ^ref, :process, ^data_updater_pid, {:shutdown, :requested}}
+      refute Process.alive?(data_updater_pid)
     end
   end
 
