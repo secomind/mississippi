@@ -24,6 +24,11 @@ defmodule E2EMessageHandler do
   end
 
   @impl Handler
+  def handle_continue(_continue_arg, state) do
+    {:ok, state}
+  end
+
+  @impl Handler
   def terminate(_reason, _state) do
     :ok
   end

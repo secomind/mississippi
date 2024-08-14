@@ -98,6 +98,15 @@ defmodule Mississippi.Consumer.MessageTracker.Server do
   end
 
   @impl true
+  def handle_info(
+        {:DOWN, _ref, :process, down_pid, {:shutdown, :requested}},
+        %State{data_updater_pid: data_updater_pid} = state
+      )
+      when down_pid == data_updater_pid do
+    {:stop, {:shutdown, :requested}, state}
+  end
+
+  @impl true
   def handle_info({:DOWN, _ref, :process, down_pid, _reason}, state) do
     %State{data_updater_pid: data_updater_pid} = state
 

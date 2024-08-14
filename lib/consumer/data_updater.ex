@@ -116,23 +116,44 @@ defmodule Mississippi.Consumer.DataUpdater do
            timestamp,
            state.handler_state
          ) do
-      {:ok, _, new_handler_state} ->
-        _ = Logger.debug("Successfully handled message #{inspect(meta.message_id)}")
-        {:ok, message_tracker} = MessageTracker.get_message_tracker(state.sharding_key)
-        MessageTracker.ack_delivery(message_tracker, message)
-
+      {:ack, _, new_handler_state} ->
+        ack_message!(message, state.sharding_key)
         new_state = %State{state | handler_state: new_handler_state}
-
         {:noreply, new_state, @data_updater_deactivation_interval_ms}
 
-      {:error, reason, _state} ->
-        _ =
-          Logger.warning("Error handling message #{inspect(meta.message_id)}, reason #{inspect(reason)}")
+      {:ack, _, new_handler_state, {:continue, continue_arg}} ->
+        ack_message!(message, state.sharding_key)
+        new_state = %State{state | handler_state: new_handler_state}
+        {:noreply, new_state, {:continue, continue_arg}}
 
-        {:ok, message_tracker} = MessageTracker.get_message_tracker(state.sharding_key)
-        MessageTracker.reject(message_tracker, message)
-        {:noreply, state, @data_updater_deactivation_interval_ms}
+      {:discard, reason, new_handler_state} ->
+        reject_message!(message, state.sharding_key, reason)
+        new_state = %State{state | handler_state: new_handler_state}
+        {:noreply, new_state, @data_updater_deactivation_interval_ms}
+
+      {:discard, reason, new_handler_state, {:continue, continue_arg}} ->
+        reject_message!(message, state.sharding_key, reason)
+        new_state = %State{state | handler_state: new_handler_state}
+        {:noreply, new_state, {:continue, continue_arg}}
+
+      {:stop, reason, action, new_handler_state} ->
+        case action do
+          :ack -> ack_message!(message, state.sharding_key)
+          :discard -> reject_message!(message, state.sharding_key, reason)
+        end
+
+        new_state = %State{state | handler_state: new_handler_state}
+        {:stop, {:shutdown, :requested}, new_state}
     end
+  end
+
+  @impl true
+  def handle_continue(continue_arg, state) do
+    %State{message_handler: message_handler, handler_state: handler_state} = state
+    {:ok, new_handler_state} = message_handler.handle_continue(continue_arg, handler_state)
+    new_state = %State{state | handler_state: new_handler_state}
+
+    {:noreply, new_state, @data_updater_deactivation_interval_ms}
   end
 
   @impl true
@@ -155,5 +176,19 @@ defmodule Mississippi.Consumer.DataUpdater do
     %State{message_handler: message_handler, handler_state: handler_state} = state
     message_handler.terminate(reason, handler_state)
     :ok
+  end
+
+  defp ack_message!(%Message{} = message, sharding_key) do
+    _ = Logger.debug("Successfully handled message #{inspect(message.meta.message_id)}")
+    {:ok, message_tracker} = MessageTracker.get_message_tracker(sharding_key)
+    MessageTracker.ack_delivery(message_tracker, message)
+  end
+
+  defp reject_message!(%Message{} = message, sharding_key, reason) do
+    _ =
+      Logger.warning("Error handling message #{inspect(message.meta.message_id)}, reason #{inspect(reason)}")
+
+    {:ok, message_tracker} = MessageTracker.get_message_tracker(sharding_key)
+    MessageTracker.reject(message_tracker, message)
   end
 end

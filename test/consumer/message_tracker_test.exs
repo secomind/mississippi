@@ -216,12 +216,53 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
       assert_receive {:trace, ^message_tracker_pid, :receive,
                       {:"$gen_call", {^data_updater_pid, _}, {:ack_delivery, ^message_2}}}
     end
+
+    test "shuts down if message forces process termination", %{
+      sharding_key: sharding_key,
+      channel: channel,
+      message: message
+    } do
+      Process.flag(:trap_exit, true)
+
+      {:ok, message_tracker_pid} = MessageTracker.get_message_tracker(sharding_key)
+      :erlang.trace(message_tracker_pid, true, [:receive])
+      mt_ref = Process.monitor(message_tracker_pid)
+
+      MockMessageHandler
+      |> expect(:init, fn _ -> {:ok, []} end)
+      |> expect(:handle_message, fn _, _, _, _, _ ->
+        {:stop, :some_reason, :ack, []}
+      end)
+      |> expect(:terminate, fn _, _ -> :ok end)
+
+      {:ok, data_updater_pid} =
+        GenServer.start_link(DataUpdater,
+          sharding_key: sharding_key,
+          message_handler: MockMessageHandler
+        )
+
+      du_ref = Process.monitor(data_updater_pid)
+
+      bind(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater_pid} end, calls: 1)
+
+      MessageTracker.handle_message(message_tracker_pid, message, channel)
+
+      bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker_pid} end, calls: 1)
+
+      assert_receive {:trace, ^message_tracker_pid, :receive, {_, {_, _}, {:ack_delivery, ^message}}}
+
+      assert_receive {:DOWN, ^du_ref, :process, ^data_updater_pid, {:shutdown, :requested}}
+      refute Process.alive?(data_updater_pid)
+
+      assert_receive {:DOWN, ^mt_ref, :process, ^message_tracker_pid, {:shutdown, :requested}}
+      refute Process.alive?(message_tracker_pid)
+    end
   end
 
   defp setup_mock_message_handler(_context) do
     MockMessageHandler
     |> stub(:init, fn _ -> {:ok, []} end)
-    |> stub(:handle_message, fn _, _, _, _, _ -> {:ok, :ok, []} end)
+    |> stub(:handle_message, fn _, _, _, _, _ -> {:ack, :ok, []} end)
 
     Hammox.set_mox_global()
   end

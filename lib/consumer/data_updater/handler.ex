@@ -16,8 +16,16 @@ defmodule Mississippi.Consumer.DataUpdater.Handler do
               {:ok, state :: handler_state} | {:error, reason :: term()}
 
   @doc """
-  Invoked when a message is received. A return value of `{:ok, result, state}` will make Mississippi ack the message,
-  while `{:error, reason, state}` will make Mississippi reject it.
+  Invoked when a message is received. Possible return values are:
+  * `{:ack, result, state}`: Mississippi acks the message
+  * `{:ack, result, state, {:continue, continue_arg}}`: Mississippi acks the message and
+    the DataUpdater process continues as specified by the `handle_continue/2` callback
+  * `{:discard, reason, state}`: Mississippi discards the message
+  * `{:discard, result, state, {:continue, continue_arg}}`: Mississippi discards the message and
+    the DataUpdater process continues as specified by the `handle_continue/2` callback
+  * `{:stop, reason, action, state}`: Mississippi acks or discards the message according to `action`
+    and then the DataUpdater process terminates normally.
+    This makes the related MessageTracker terminate, too.
   """
   @callback handle_message(
               payload :: term(),
@@ -26,8 +34,11 @@ defmodule Mississippi.Consumer.DataUpdater.Handler do
               timestamp :: term(),
               state :: handler_state
             ) ::
-              {:ok, result :: term(), new_state :: handler_state}
-              | {:error, reason :: term(), state :: handler_state}
+              {:ack, result :: term(), new_state :: handler_state}
+              | {:ack, result :: term(), new_state :: handler_state, {:continue, continue_arg :: term()}}
+              | {:discard, reason :: term(), new_state :: handler_state}
+              | {:discard, reason :: term(), new_state :: handler_state, {:continue, continue_arg :: term()}}
+              | {:stop, reason :: term(), action :: :ack | :discard, new_state :: handler_state}
 
   @doc """
   Invoked when an information that is not a message is received.
@@ -36,6 +47,13 @@ defmodule Mississippi.Consumer.DataUpdater.Handler do
   """
   @callback handle_signal(signal :: term(), state :: handler_state) ::
               {result :: term(), new_state :: handler_state}
+
+  @doc """
+  Invoked when `handle_message/5` returns a `{:continue, continue_arg}` tuple.
+  Used to update the state of a stateful handler.
+  """
+  @callback handle_continue(continue_arg :: term(), state :: handler_state) ::
+              {:ok, new_state :: handler_state}
 
   @doc """
   Invoked when the handler is being terminated. It can be used to perform cleanup tasks before closing.
