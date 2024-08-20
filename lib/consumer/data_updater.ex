@@ -78,7 +78,7 @@ defmodule Mississippi.Consumer.DataUpdater do
       message_handler: message_handler
     ]
 
-    name = {:via, Registry, {Registry.DataUpdater, {:sharding_key, sharding_key}}}
+    name = {:via, Registry, {DataUpdater.Registry, {:sharding_key, sharding_key}}}
     GenServer.start_link(__MODULE__, init_args, name: name)
   end
 

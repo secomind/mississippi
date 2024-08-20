@@ -21,7 +21,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
   doctest Mississippi.Consumer.AMQPDataConsumer
 
   setup_all do
-    start_supervised({Registry, [keys: :unique, name: Registry.AMQPDataConsumer]})
+    start_supervised({Registry, [keys: :unique, name: AMQPDataConsumer.Registry]})
     :ok
   end
 
