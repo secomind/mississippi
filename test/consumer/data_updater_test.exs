@@ -11,7 +11,7 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
   @moduletag :unit
 
   setup_all do
-    start_supervised!({Registry, [keys: :unique, name: Registry.DataUpdater]})
+    start_supervised!({Registry, [keys: :unique, name: DataUpdater.Registry]})
 
     start_supervised!({DataUpdater.Supervisor, message_handler: MockMessageHandler})
 
@@ -31,7 +31,7 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
       {:ok, pid} = DataUpdater.get_data_updater_process(sharding_key)
 
       du_processes =
-        Registry.select(Registry.DataUpdater, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
+        Registry.select(DataUpdater.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
 
       assert {{:sharding_key, sharding_key}, pid} in du_processes
     end
@@ -43,7 +43,7 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
       {:ok, pid} = DataUpdater.get_data_updater_process(sharding_key)
 
       du_processes =
-        Registry.select(Registry.DataUpdater, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
+        Registry.select(DataUpdater.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
 
       assert {{:sharding_key, sharding_key}, pid} in du_processes
 
@@ -58,7 +58,7 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
       {:ok, first_pid} = DataUpdater.get_data_updater_process(sharding_key)
 
       du_processes =
-        Registry.select(Registry.DataUpdater, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
+        Registry.select(DataUpdater.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
 
       assert {{:sharding_key, sharding_key}, first_pid} in du_processes
 
@@ -68,7 +68,7 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
       assert first_pid != second_pid
 
       du_processes =
-        Registry.select(Registry.DataUpdater, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
+        Registry.select(DataUpdater.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
 
       assert {{:sharding_key, sharding_key}, second_pid} in du_processes
       refute {{:sharding_key, sharding_key}, first_pid} in du_processes

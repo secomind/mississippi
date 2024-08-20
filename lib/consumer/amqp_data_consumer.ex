@@ -7,6 +7,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   use GenServer
 
   alias AMQP.Channel
+  alias Mississippi.Consumer.AMQPDataConsumer
   alias Mississippi.Consumer.AMQPDataConsumer.ExRabbitPoolConnection
   alias Mississippi.Consumer.AMQPDataConsumer.State
   alias Mississippi.Consumer.Message
@@ -115,7 +116,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   end
 
   defp get_queue_via_tuple(queue_index) when is_integer(queue_index) do
-    {:via, Registry, {Registry.AMQPDataConsumer, {:queue_index, queue_index}}}
+    {:via, Registry, {AMQPDataConsumer.Registry, {:queue_index, queue_index}}}
   end
 
   defp schedule_connect do

@@ -14,7 +14,7 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
   @moduletag :unit
 
   setup_all do
-    start_supervised({Registry, [keys: :unique, name: Registry.MessageTracker]})
+    start_supervised({Registry, [keys: :unique, name: MessageTracker.Registry]})
 
     start_supervised({DynamicSupervisor, strategy: :one_for_one, name: MessageTracker.Supervisor})
 
@@ -33,7 +33,7 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
       {:ok, pid} = MessageTracker.get_message_tracker(sharding_key)
 
       mt_processes =
-        Registry.select(Registry.MessageTracker, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
+        Registry.select(MessageTracker.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
 
       assert {{:sharding_key, sharding_key}, pid} in mt_processes
     end
@@ -45,7 +45,7 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
       {:ok, pid} = MessageTracker.get_message_tracker(sharding_key)
 
       mt_processes =
-        Registry.select(Registry.MessageTracker, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
+        Registry.select(MessageTracker.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
 
       assert {{:sharding_key, sharding_key}, pid} in mt_processes
 
@@ -60,7 +60,7 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
       {:ok, first_pid} = MessageTracker.get_message_tracker(sharding_key)
 
       mt_processes =
-        Registry.select(Registry.MessageTracker, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
+        Registry.select(MessageTracker.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
 
       assert {{:sharding_key, sharding_key}, first_pid} in mt_processes
 
@@ -70,7 +70,7 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
       assert first_pid != second_pid
 
       mt_processes =
-        Registry.select(Registry.MessageTracker, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
+        Registry.select(MessageTracker.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
 
       assert {{:sharding_key, sharding_key}, second_pid} in mt_processes
       refute {{:sharding_key, sharding_key}, first_pid} in mt_processes
