@@ -10,6 +10,7 @@ defmodule Mississippi.Consumer.DataUpdater do
   use GenServer, restart: :transient
   use Efx
 
+  alias Horde.Registry
   alias Mississippi.Consumer.DataUpdater
   alias Mississippi.Consumer.DataUpdater.State
   alias Mississippi.Consumer.Message

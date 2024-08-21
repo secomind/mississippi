@@ -1,6 +1,8 @@
 defmodule Mississippi.Consumer.DataUpdater.Supervisor do
   @moduledoc false
-  use DynamicSupervisor
+  use Horde.DynamicSupervisor
+
+  alias Horde.DynamicSupervisor
 
   require Logger
 

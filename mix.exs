@@ -37,6 +37,7 @@ defmodule Mississippi.MixProject do
       {:ex_rabbit_pool, github: "leductam/ex_rabbit_pool"},
       {:hammox, "~> 0.7", only: :test},
       {:mix_audit, "~> 2.0", only: [:dev], runtime: false},
+      {:horde, git: "https://github.com/noaccOS/horde", ref: "feat/dynamic-supervisor-respect-extra_arguments"},
       {:nimble_options, "~> 1.0"},
       {:pretty_log, "~> 0.1"},
       {:styler, "~> 1.0.0-rc.1", only: [:dev], runtime: false},

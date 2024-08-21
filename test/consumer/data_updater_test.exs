@@ -3,6 +3,8 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
 
   import Hammox
 
+  alias Horde.DynamicSupervisor
+  alias Horde.Registry
   alias Mississippi.Consumer.DataUpdater
   alias Mississippi.Consumer.DataUpdater.State
   alias Mississippi.Consumer.MessageTracker

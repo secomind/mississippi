@@ -7,6 +7,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   use GenServer
 
   alias AMQP.Channel
+  alias Horde.Registry
   alias Mississippi.Consumer.AMQPDataConsumer
   alias Mississippi.Consumer.AMQPDataConsumer.ExRabbitPoolConnection
   alias Mississippi.Consumer.AMQPDataConsumer.State

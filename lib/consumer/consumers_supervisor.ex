@@ -2,6 +2,8 @@ defmodule Mississippi.Consumer.ConsumersSupervisor do
   @moduledoc false
   use Supervisor
 
+  alias Horde.DynamicSupervisor
+  alias Horde.Registry
   alias Mississippi.Consumer.AMQPDataConsumer
   alias Mississippi.Consumer.DataUpdater
   alias Mississippi.Consumer.MessageTracker
