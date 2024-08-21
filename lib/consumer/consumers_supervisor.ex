@@ -23,17 +23,22 @@ defmodule Mississippi.Consumer.ConsumersSupervisor do
     queues_config = init_arg[:queues]
 
     children = [
-      {Registry, [keys: :unique, name: DataUpdater.Registry]},
-      {Registry, [keys: :unique, name: MessageTracker.Registry]},
-      {Registry, [keys: :unique, name: AMQPDataConsumer.Registry]},
+      {Cluster.Supervisor, [cluster_topologies(), [name: Mississippi.Consumer.ClusterSupervisor]]},
+      {Registry, [keys: :unique, name: DataUpdater.Registry, members: :auto]},
+      {Registry, [keys: :unique, name: MessageTracker.Registry, members: :auto]},
+      {Registry, [keys: :unique, name: AMQPDataConsumer.Registry, members: :auto]},
       {DataUpdater.Supervisor, message_handler: message_handler},
-      {DynamicSupervisor, strategy: :one_for_one, name: MessageTracker.Supervisor},
+      {DynamicSupervisor, strategy: :one_for_one, name: MessageTracker.Supervisor, members: :auto},
       {AMQPDataConsumer.Supervisor, queues_config: queues_config}
     ]
 
     opts = [strategy: :rest_for_one]
 
     Supervisor.init(children, opts)
+  end
+
+  defp cluster_topologies do
+    []
   end
 
   @doc false
