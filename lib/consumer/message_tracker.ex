@@ -13,6 +13,8 @@ defmodule Mississippi.Consumer.MessageTracker do
 
   use Efx
 
+  alias Horde.DynamicSupervisor
+  alias Horde.Registry
   alias Mississippi.Consumer.Message
   alias Mississippi.Consumer.MessageTracker
 

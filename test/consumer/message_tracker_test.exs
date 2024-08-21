@@ -7,6 +7,8 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
   import Hammox
 
   alias AMQP.Channel
+  alias Horde.DynamicSupervisor
+  alias Horde.Registry
   alias Mississippi.Consumer.DataUpdater
   alias Mississippi.Consumer.MessageTracker
   alias Mississippi.Consumer.MessageTracker.Server.State

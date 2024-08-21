@@ -41,6 +41,8 @@ defmodule Mississippi.MixProject do
       {:current_rabbit_pool, "~> 1.1"},
       {:hammox, "~> 0.7", only: :test},
       {:mix_audit, "~> 2.0", only: [:dev], runtime: false},
+      # Use tagged version when https://github.com/derekkraan/horde/pull/274 appears in a tag
+      {:horde, github: "derekkraan/horde"},
       {:nimble_options, "~> 1.0"},
       {:pretty_log, "~> 0.1"},
       {:styler, "~> 1.0.0-rc.1", only: [:dev], runtime: false},

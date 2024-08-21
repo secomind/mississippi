@@ -5,6 +5,8 @@ defmodule Mississippi.Consumer.ConsumersSupervisor do
   @moduledoc false
   use Supervisor
 
+  alias Horde.DynamicSupervisor
+  alias Horde.Registry
   alias Mississippi.Consumer.AMQPDataConsumer
   alias Mississippi.Consumer.DataUpdater
   alias Mississippi.Consumer.MessageTracker
@@ -24,11 +26,11 @@ defmodule Mississippi.Consumer.ConsumersSupervisor do
     queues_config = init_arg[:queues]
 
     children = [
-      {Registry, [keys: :unique, name: DataUpdater.Registry]},
-      {Registry, [keys: :unique, name: MessageTracker.Registry]},
-      {Registry, [keys: :unique, name: AMQPDataConsumer.Registry]},
+      {Registry, [keys: :unique, name: DataUpdater.Registry, members: :auto]},
+      {Registry, [keys: :unique, name: MessageTracker.Registry, members: :auto]},
+      {Registry, [keys: :unique, name: AMQPDataConsumer.Registry, members: :auto]},
       {DataUpdater.Supervisor, message_handler: message_handler},
-      {DynamicSupervisor, strategy: :one_for_one, name: MessageTracker.Supervisor},
+      {DynamicSupervisor, strategy: :one_for_one, name: MessageTracker.Supervisor, members: :auto},
       {AMQPDataConsumer.Supervisor, queues_config: queues_config}
     ]
 

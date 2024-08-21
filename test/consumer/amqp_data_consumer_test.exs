@@ -9,6 +9,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
   import Mox
 
   alias AMQP.Channel
+  alias Horde.Registry
   alias Mississippi.Consumer.AMQPDataConsumer
   alias Mississippi.Consumer.AMQPDataConsumer.State
   alias Mississippi.Consumer.MessageTracker
