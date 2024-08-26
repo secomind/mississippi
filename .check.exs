@@ -17,9 +17,6 @@
     # Disable :gettext checks
     {:gettext, false},
 
-    # We run tests separately in CI
-    {:ex_unit, false},
-
     # Explicitly disable curated tools we don't currently use to skip the warning about
     # the missing dependency
     {:doctor, false},
