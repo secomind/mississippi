@@ -31,7 +31,7 @@ jobs:
         mix deps.compile
 
     - name: Run check
-      run: mix check
+      run: mix check --except ex_unit
 
   unit-test:
     name: Run `mix test --only unit`
