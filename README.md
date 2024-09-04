@@ -1,7 +1,7 @@
 # Mississippi
 
-Message processing framework.
-Messages are sharded into a configurable amount of AMQP queues,
+Distributed message processing framework over AMQP.
+Messages are sharded into a configurable amount of queues,
 and the ones belonging to the same shard are guaranteed to be processed
 in the same order as they were sent. The sharding key can be any Erlang term!
 There can be any number of consumers, as long as they process messages from
