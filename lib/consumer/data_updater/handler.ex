@@ -1,3 +1,6 @@
+# Copyright 2024 SECO Mind Srl
+# SPDX-License-Identifier: Apache-2.0
+
 defmodule Mississippi.Consumer.DataUpdater.Handler do
   @moduledoc """
   A behaviour module to for implementing a Processor of Mississippi messages.

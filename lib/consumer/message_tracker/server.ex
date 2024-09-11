@@ -1,3 +1,6 @@
+# Copyright 2024 SECO Mind Srl
+# SPDX-License-Identifier: Apache-2.0
+
 defmodule Mississippi.Consumer.MessageTracker.Server do
   @moduledoc """
   This module implements the MessageTracker process logic.

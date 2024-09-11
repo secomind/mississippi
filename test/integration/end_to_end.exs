@@ -1,3 +1,6 @@
+# Copyright 2024 SECO Mind Srl
+# SPDX-License-Identifier: Apache-2.0
+
 defmodule Mississippi.EndToEnd.Test do
   use ExUnit.Case
 

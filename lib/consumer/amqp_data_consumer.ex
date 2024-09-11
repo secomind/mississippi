@@ -1,3 +1,6 @@
+# Copyright 2024 SECO Mind Srl
+# SPDX-License-Identifier: Apache-2.0
+
 defmodule Mississippi.Consumer.AMQPDataConsumer do
   @moduledoc """
   The AMQPDataConsumer process fetches messages from a Mississippi AMQP queue and
