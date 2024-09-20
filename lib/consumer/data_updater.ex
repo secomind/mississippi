@@ -67,6 +67,10 @@ defmodule Mississippi.Consumer.DataUpdater do
     end
   end
 
+  def start_link(start_args) do
+    start_link({:message_handler, Mississippi.Consumer.DataUpdater.Handler.Impl}, start_args)
+  end
+
   def start_link(extra_args, start_args) do
     {:message_handler, message_handler} = extra_args
     sharding_key = Keyword.fetch!(start_args, :sharding_key)
