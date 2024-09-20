@@ -7,7 +7,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   sends them to MessageTrackers according to the message sharding key.
   """
 
-  use GenServer
+  use GenServer, restart: :transient
 
   alias AMQP.Channel
   alias Horde.Registry
@@ -119,6 +119,12 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
 
   def handle_info({:EXIT, _from, {:name_conflict, {_key, _value}, _registry, _pid}}, state) do
     _ = Logger.warning("Duplicate AMQPDataConsumer shutting down")
+    # Exit with :normal so we're not restarted
+    {:stop, :normal, state}
+  end
+
+  def handle_info({:EXIT, _from, {:shutdown, :process_redistribution}}, state) do
+    _ = Logger.info("AMQPDataConsumer shutting down due to process redistribution")
     # Exit with :normal so we're not restarted
     {:stop, :normal, state}
   end
