@@ -9,6 +9,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
   import Mox
 
   alias AMQP.Channel
+  alias Horde.Registry
   alias Mississippi.Consumer.AMQPDataConsumer
   alias Mississippi.Consumer.AMQPDataConsumer.State
   alias Mississippi.Consumer.MessageTracker
@@ -21,7 +22,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
   doctest Mississippi.Consumer.AMQPDataConsumer
 
   setup_all do
-    start_supervised({Registry, [keys: :unique, name: Registry.AMQPDataConsumer]})
+    start_supervised({Registry, [keys: :unique, name: AMQPDataConsumer.Registry]})
     :ok
   end
 

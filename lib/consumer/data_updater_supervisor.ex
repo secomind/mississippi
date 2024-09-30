@@ -3,7 +3,9 @@
 
 defmodule Mississippi.Consumer.DataUpdater.Supervisor do
   @moduledoc false
-  use DynamicSupervisor
+  use Horde.DynamicSupervisor
+
+  alias Horde.DynamicSupervisor
 
   require Logger
 
@@ -14,7 +16,7 @@ defmodule Mississippi.Consumer.DataUpdater.Supervisor do
   @impl true
   def init(init_args) do
     _ = Logger.info("Starting DataUpdater supervisor")
-    DynamicSupervisor.init(strategy: :one_for_one, extra_arguments: init_args)
+    DynamicSupervisor.init(strategy: :one_for_one, members: :auto, extra_arguments: init_args)
   end
 
   def start_child(child) do
