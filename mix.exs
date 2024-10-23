@@ -38,9 +38,7 @@ defmodule Mississippi.MixProject do
       {:elixir_uuid, "~> 1.2"},
       {:ex_check, "~> 0.16", only: [:dev], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
-      # hex.pm package and esl/ex_rabbit_pool do not support amqp version 2.1.
-      # This fork is supporting amqp ~> 2.0 and also ~> 3.0.
-      {:ex_rabbit_pool, github: "simplebet/ex_rabbit_pool", ref: "latest-amqp"},
+      {:current_rabbit_pool, "~> 1.1"},
       {:hammox, "~> 0.7", only: :test},
       {:mix_audit, "~> 2.0", only: [:dev], runtime: false},
       {:nimble_options, "~> 1.0"},
