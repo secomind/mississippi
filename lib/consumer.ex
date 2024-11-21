@@ -33,18 +33,17 @@ defmodule Mississippi.Consumer do
     # Invariant: we use one channel for one queue.
     connection_number = Kernel.ceil(queue_count / channels_per_connection)
 
-    _ =
-      Logger.debug("Have #{queue_count} queues and #{channels_per_connection} channels per connection")
+    Logger.debug("Have #{queue_count} queues and #{channels_per_connection} channels per connection")
 
-    _ =
-      Logger.debug(
-        "Have #{connection_number} connections and a total of #{connection_number * channels_per_connection} channels"
-      )
+    Logger.debug(
+      "Have #{connection_number} connections and a total of #{connection_number * channels_per_connection} channels"
+    )
 
     children = [
       {ExRabbitPool.PoolSupervisor,
        rabbitmq_config: amqp_consumer_options, connection_pools: [events_consumer_pool_config(connection_number)]},
-      {ConsumersSupervisor, queues: queue_config, message_handler: message_handler}
+      {ConsumersSupervisor,
+       queues: queue_config, message_handler: message_handler, cluster_topologies: opts[:cluster_topologies]}
     ]
 
     Supervisor.init(children, strategy: :rest_for_one)
