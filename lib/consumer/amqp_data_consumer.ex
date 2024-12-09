@@ -50,9 +50,10 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   @impl true
   def handle_info(:init_consume, state), do: {:noreply, init_consume(state)}
 
-  # This is a Message Tracker deactivating itself normally. Just remove its monitor.
-  def handle_info({:DOWN, _, :process, pid, :normal}, %State{channel: %Channel{pid: chan_pid}} = state)
-      when pid != chan_pid do
+  # This is a Message Tracker deactivating itself normally, either for timeout
+  # or because its DataUpdater was explicitly stopped. Just remove its monitor.
+  def handle_info({:DOWN, _, :process, pid, reason}, %State{channel: %Channel{pid: chan_pid}} = state)
+      when pid != chan_pid and reason in [:normal, {:shutdown, :requested}] do
     %State{monitors: monitors} = state
     new_monitors = List.delete(monitors, pid)
     {:noreply, %State{state | monitors: new_monitors}}
