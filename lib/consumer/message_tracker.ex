@@ -13,6 +13,8 @@ defmodule Mississippi.Consumer.MessageTracker do
 
   use Efx
 
+  alias Horde.DynamicSupervisor
+  alias Horde.Registry
   alias Mississippi.Consumer.Message
   alias Mississippi.Consumer.MessageTracker
 
@@ -25,7 +27,7 @@ defmodule Mississippi.Consumer.MessageTracker do
   @spec get_message_tracker(sharding_key :: term()) ::
           {:ok, pid()} | {:error, :message_tracker_start_fail}
   defeffect get_message_tracker(sharding_key) do
-    name = {:via, Registry, {Registry.MessageTracker, {:sharding_key, sharding_key}}}
+    name = {:via, Registry, {MessageTracker.Registry, {:sharding_key, sharding_key}}}
 
     # TODO bring back :offload_start (?)
     case DynamicSupervisor.start_child(
