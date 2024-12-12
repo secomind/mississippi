@@ -6,7 +6,8 @@ defmodule Mississippi.Consumer.MessageTracker.Server do
   This module implements the MessageTracker process logic.
   """
 
-  use GenServer, restart: :transient
+  # We'll be made alive on demand
+  use GenServer, restart: :temporary
 
   alias Mississippi.Consumer.DataUpdater
   alias Mississippi.Consumer.Message
