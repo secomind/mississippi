@@ -10,7 +10,8 @@ defmodule Mississippi.Consumer.DataUpdater do
   MessageTracker process that takes care of maitaining the order of messages.
   """
 
-  use GenServer, restart: :transient
+  # We'll be made alive on demand
+  use GenServer, restart: :temporary
   use Efx
 
   alias Horde.Registry
@@ -68,6 +69,10 @@ defmodule Mississippi.Consumer.DataUpdater do
 
         {:error, :data_updater_start_fail}
     end
+  end
+
+  def start_link(start_args) do
+    start_link({:message_handler, Mississippi.Consumer.DataUpdater.Handler.Impl}, start_args)
   end
 
   def start_link(extra_args, start_args) do
