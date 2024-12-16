@@ -119,6 +119,8 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
         |> amqp_data_consumer_fixture()
         |> start_supervised!()
 
+      :erlang.trace(data_consumer_pid, true, [:receive])
+
       bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end, calls: 1)
 
       send(data_consumer_pid, {:basic_deliver, payload, meta})
@@ -126,7 +128,6 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
       assert %State{monitors: [^message_tracker]} = :sys.get_state(data_consumer_pid)
 
       kill_message_tracker(message_tracker)
-      :erlang.trace(data_consumer_pid, true, [:receive])
 
       assert_receive {:trace, ^data_consumer_pid, :receive, {:DOWN, _, :process, ^message_tracker, :normal}}
 
