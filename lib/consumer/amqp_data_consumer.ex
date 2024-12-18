@@ -123,6 +123,10 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
     {:stop, :normal, state}
   end
 
+  def handle_info({:EXIT, _from, reason}, state) do
+    {:stop, reason, state}
+  end
+
   defp maybe_update_monitors(pid, monitors) do
     if pid in monitors do
       monitors
