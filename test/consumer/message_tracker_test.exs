@@ -11,7 +11,6 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
   alias Horde.Registry
   alias Mississippi.Consumer.DataUpdater
   alias Mississippi.Consumer.MessageTracker
-  alias Mississippi.Consumer.MessageTracker.Server.State
   alias Mississippi.Consumer.Test.Placeholder
 
   require Logger
@@ -19,9 +18,9 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
   @moduletag :unit
 
   setup_all do
-    start_supervised({Registry, [keys: :unique, name: MessageTracker.Registry]})
+    start_supervised({Registry, [keys: :unique, name: MessageTracker.Registry, members: :auto]})
 
-    start_supervised({DynamicSupervisor, strategy: :one_for_one, name: MessageTracker.Supervisor})
+    start_supervised({DynamicSupervisor, strategy: :one_for_one, name: MessageTracker.Supervisor, members: :auto})
 
     :ok
   end
@@ -35,50 +34,45 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
     test "a process is successfully started with a given sharding key", %{
       sharding_key: sharding_key
     } do
+      mt_registry = Process.whereis(MessageTracker.Registry)
+      :erlang.trace(mt_registry, true, [:receive])
+
       {:ok, pid} = MessageTracker.get_message_tracker(sharding_key)
 
-      mt_processes =
-        Registry.select(MessageTracker.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
-
-      assert {{:sharding_key, sharding_key}, pid} in mt_processes
+      assert sharding_key_added(mt_registry, sharding_key)
+      assert Process.alive?(pid)
     end
 
     @tag :message_tracker_orleans
     test "a process is not duplicated when using the same sharding key", %{
       sharding_key: sharding_key
     } do
+      mt_registry = Process.whereis(MessageTracker.Registry)
+      :erlang.trace(mt_registry, true, [:receive])
+
       {:ok, pid} = MessageTracker.get_message_tracker(sharding_key)
-
-      mt_processes =
-        Registry.select(MessageTracker.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
-
-      assert {{:sharding_key, sharding_key}, pid} in mt_processes
+      assert sharding_key_added(mt_registry, sharding_key)
 
       {:ok, ^pid} = MessageTracker.get_message_tracker(sharding_key)
-      assert {{:sharding_key, sharding_key}, pid} in mt_processes
+      refute sharding_key_added(mt_registry, sharding_key)
     end
 
     @tag :message_tracker_orleans
     test "a process is spawned again if requested after termination", %{
       sharding_key: sharding_key
     } do
+      mt_registry = Process.whereis(MessageTracker.Registry)
+      :erlang.trace(mt_registry, true, [:receive])
+
       {:ok, first_pid} = MessageTracker.get_message_tracker(sharding_key)
-
-      mt_processes =
-        Registry.select(MessageTracker.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
-
-      assert {{:sharding_key, sharding_key}, first_pid} in mt_processes
+      assert sharding_key_added(mt_registry, sharding_key)
 
       DynamicSupervisor.terminate_child(MessageTracker.Supervisor, first_pid)
+      assert sharding_key_removed(mt_registry, sharding_key)
 
       {:ok, second_pid} = MessageTracker.get_message_tracker(sharding_key)
       assert first_pid != second_pid
-
-      mt_processes =
-        Registry.select(MessageTracker.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
-
-      assert {{:sharding_key, sharding_key}, second_pid} in mt_processes
-      refute {{:sharding_key, sharding_key}, first_pid} in mt_processes
+      assert sharding_key_added(mt_registry, sharding_key)
     end
   end
 
@@ -100,14 +94,12 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
       {:ok, message_tracker_pid} = MessageTracker.get_message_tracker(sharding_key)
       mt_ref = Process.monitor(message_tracker_pid)
 
-      MessageTracker.handle_message(message_tracker_pid, message, channel)
-
       bind(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater} end)
+      MessageTracker.handle_message(message_tracker_pid, message, channel)
 
       send(message_tracker_pid, {:DOWN, :dontcare, :process, channel.pid, :crash})
 
       assert_receive {:DOWN, ^mt_ref, :process, ^message_tracker_pid, :channel_crashed}
-
       refute Process.alive?(message_tracker_pid)
     end
 
@@ -118,24 +110,20 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
       message: message
     } do
       {:ok, message_tracker_pid} = MessageTracker.get_message_tracker(sharding_key)
-      :erlang.trace(message_tracker_pid, true, [:receive])
-
       data_updater_1_pid = get_mock_data_updater!()
+      data_updater_2_pid = get_mock_data_updater!()
 
+      Enum.each([message_tracker_pid, data_updater_1_pid, data_updater_2_pid], &:erlang.trace(&1, true, [:receive]))
       bind(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater_1_pid} end, calls: 1)
 
       MessageTracker.handle_message(message_tracker_pid, message, channel)
 
       assert_receive {:trace, ^data_updater_1_pid, :receive, {_, {:handle_message, ^message}}}
 
+      bind(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater_2_pid} end, calls: 1)
       kill_data_updater(data_updater_1_pid)
 
-      assert_receive {:trace, ^message_tracker_pid, :receive, {:DOWN, _, :process, ^data_updater_1_pid, :normal}}
-
-      data_updater_2_pid = get_mock_data_updater!()
-
-      bind(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater_2_pid} end, calls: 1)
-
+      assert_receive {:trace, ^message_tracker_pid, :receive, {:DOWN, _, :process, ^data_updater_1_pid, _}}
       assert_receive {:trace, ^data_updater_2_pid, :receive, {_, {:handle_message, ^message}}}
     end
   end
@@ -197,29 +185,21 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
 
       MessageTracker.handle_message(message_tracker_pid, message_1, channel)
       MessageTracker.handle_message(message_tracker_pid, message_2, channel)
-      message_queue = :queue.from_list([message_1, message_2])
 
-      assert %State{queue: ^message_queue} = :sys.get_state(message_tracker_pid)
-
-      assert_receive {:trace, ^data_updater_pid, :receive, {_, {:handle_message, ^message_1}}}
-
-      refute_received {:trace, ^data_updater_pid, :receive, {_, {:handle_message, ^message_2}}}
+      assert_receive {:trace, ^data_updater_pid, :receive, {_, {:handle_message, first_handled_message}}}
 
       assert_receive {:trace, ^message_tracker_pid, :receive,
-                      {:"$gen_call", {^data_updater_pid, _}, {:ack_delivery, ^message_1}}}
+                      {:"$gen_call", {^data_updater_pid, _}, {:ack_delivery, first_acked_message}}}
 
-      refute_received {:trace, ^message_tracker_pid, :receive,
-                       {:"$gen_call", {^data_updater_pid, _}, {:ack_delivery, ^message_2}}}
-
-      # According to :queue, :queue.drop(:queue.from_list([message_1, message_2])) != :queue.from_list([message_2])
-      queue_2 = :queue.drop(message_queue)
-
-      assert %State{queue: ^queue_2} = :sys.get_state(message_tracker_pid)
-
-      assert_receive {:trace, ^data_updater_pid, :receive, {_, {:handle_message, ^message_2}}}
+      assert_receive {:trace, ^data_updater_pid, :receive, {_, {:handle_message, second_handled_message}}}
 
       assert_receive {:trace, ^message_tracker_pid, :receive,
-                      {:"$gen_call", {^data_updater_pid, _}, {:ack_delivery, ^message_2}}}
+                      {:"$gen_call", {^data_updater_pid, _}, {:ack_delivery, second_acked_message}}}
+
+      assert first_handled_message == message_1
+      assert first_acked_message == message_1
+      assert second_handled_message == message_2
+      assert second_acked_message == message_2
     end
 
     test "shuts down if message forces process termination", %{
@@ -331,5 +311,27 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
         delivery_tag: System.unique_integer()
       }
     }
+  end
+
+  defp sharding_key_added(registry_pid, sharding_key) do
+    receive do
+      {:trace, ^registry_pid, :receive,
+       {:crdt_update,
+        [
+          {:add, {:key, {:sharding_key, ^sharding_key}}, {{Mississippi.Consumer.MessageTracker.Registry, _}, _, _}}
+        ]}} ->
+        true
+    after
+      100 -> false
+    end
+  end
+
+  defp sharding_key_removed(registry_pid, sharding_key) do
+    receive do
+      {:trace, ^registry_pid, :receive, {:crdt_update, [{:remove, {:key, {:sharding_key, ^sharding_key}}}]}} ->
+        true
+    after
+      100 -> false
+    end
   end
 end
