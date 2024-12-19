@@ -7,7 +7,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   sends them to MessageTrackers according to the message sharding key.
   """
 
-  use GenServer
+  use GenServer, restart: :transient
 
   alias AMQP.Channel
   alias Horde.Registry
@@ -34,6 +34,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
 
   @impl true
   def init(args) do
+    Process.flag(:trap_exit, true)
     queue_name = Keyword.fetch!(args, :queue_name)
     connection = Keyword.get(args, :connection, ExRabbitPoolConnection)
 
@@ -114,6 +115,16 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
         state.connection.adapter().ack(channel, meta.delivery_tag, [])
         {:noreply, state}
     end
+  end
+
+  def handle_info({:EXIT, _from, {:name_conflict, {_key, _value}, _registry, _pid}}, state) do
+    _ = Logger.warning("Duplicate AMQPDataConsumer shutting down")
+    # Exit with :normal so we're not restarted
+    {:stop, :normal, state}
+  end
+
+  def handle_info({:EXIT, _from, reason}, state) do
+    {:stop, reason, state}
   end
 
   defp maybe_update_monitors(pid, monitors) do
