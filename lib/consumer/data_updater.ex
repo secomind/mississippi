@@ -14,6 +14,7 @@ defmodule Mississippi.Consumer.DataUpdater do
   use GenServer, restart: :temporary
   use Efx
 
+  alias Horde.DynamicSupervisor
   alias Horde.Registry
   alias Mississippi.Consumer.DataUpdater
   alias Mississippi.Consumer.DataUpdater.State
@@ -51,7 +52,10 @@ defmodule Mississippi.Consumer.DataUpdater do
           {:ok, pid()} | {:error, :data_updater_start_fail}
   defeffect get_data_updater_process(sharding_key) do
     # TODO bring back :offload_start (?)
-    case DataUpdater.Supervisor.start_child({DataUpdater, sharding_key: sharding_key}) do
+    case DynamicSupervisor.start_child(
+           DataUpdater.Supervisor,
+           {DataUpdater, sharding_key: sharding_key}
+         ) do
       {:ok, pid} ->
         {:ok, pid}
 
@@ -69,6 +73,10 @@ defmodule Mississippi.Consumer.DataUpdater do
 
         {:error, :data_updater_start_fail}
     end
+  end
+
+  def start_link(start_args) do
+    start_link({:message_handler, Mississippi.Consumer.DataUpdater.Handler.Impl}, start_args)
   end
 
   def start_link(extra_args, start_args) do
