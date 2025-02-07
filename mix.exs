@@ -59,7 +59,6 @@ defmodule Mississippi.MixProject do
 
   defp package do
     [
-      organization: "",
       licenses: ["Apache-2.0"],
       links: %{"GitHub" => @source_url},
       maintainers: ["Arnaldo Cesco", "Francesco Noacco"]
