@@ -38,6 +38,7 @@ defmodule Mississippi.MixProject do
       {:elixir_uuid, "~> 1.2"},
       {:ex_check, "~> 0.16", only: [:dev], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:current_rabbit_pool, "~> 1.1"},
       {:hammox, "~> 0.7", only: :test},
       {:mix_audit, "~> 2.0", only: [:dev], runtime: false},
@@ -61,7 +62,6 @@ defmodule Mississippi.MixProject do
 
   defp package do
     [
-      organization: "",
       licenses: ["Apache-2.0"],
       links: %{"GitHub" => @source_url},
       maintainers: ["Arnaldo Cesco", "Francesco Noacco"]
