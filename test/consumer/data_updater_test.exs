@@ -18,7 +18,13 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
   setup_all do
     start_supervised!({Registry, [keys: :unique, name: DataUpdater.Registry]})
 
-    start_supervised!({DataUpdater.Supervisor, message_handler: MockMessageHandler})
+    start_supervised(
+      {DynamicSupervisor,
+       strategy: :one_for_one,
+       name: DataUpdater.Supervisor,
+       members: :auto,
+       extra_arguments: [message_handler: MockMessageHandler]}
+    )
 
     :ok
   end

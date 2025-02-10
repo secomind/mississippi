@@ -123,6 +123,12 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
     {:stop, :normal, state}
   end
 
+  def handle_info({:EXIT, _from, {:shutdown, :process_redistribution}}, state) do
+    _ = Logger.info("AMQPDataConsumer shutting down due to process redistribution")
+    # Exit with :normal so we're not restarted
+    {:stop, :normal, state}
+  end
+
   def handle_info({:EXIT, _from, reason}, state) do
     {:stop, reason, state}
   end
