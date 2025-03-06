@@ -31,7 +31,7 @@ defmodule Mississippi.Consumer do
 
     channels_per_connection = amqp_consumer_options[:channels]
 
-    queue_count = queue_config[:range_end] - queue_config[:range_start] + 1
+    queue_count = queue_config[:total_count]
 
     # Invariant: we use one channel for one queue.
     connection_number = Kernel.ceil(queue_count / channels_per_connection)
