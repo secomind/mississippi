@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 defmodule Mississippi.Consumer.MessageTracker.Test do
-  use EfxCase, async: false
+  use ExUnit.Case, async: false
 
   import Hammox
 
@@ -12,8 +12,10 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
   alias Mississippi.Consumer.DataUpdater
   alias Mississippi.Consumer.MessageTracker
   alias Mississippi.Consumer.Test.Placeholder
+  alias Mississippi.DataUpdater.Helpers
 
   require Logger
+  require Mimic
 
   @moduletag :unit
 
@@ -24,6 +26,8 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
 
     :ok
   end
+
+  setup {Mimic, :verify_on_exit!}
 
   doctest Mississippi.Consumer.MessageTracker
 
@@ -83,6 +87,7 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
     setup :setup_mock_channel
     setup :setup_mock_data_updater
     setup :add_on_exit
+    setup :setup_message_tracker
 
     @tag :message_tracker_fault_tolerance
     test "a process crashes if the related AMQP Channel crashes", %{
@@ -94,7 +99,7 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
       {:ok, message_tracker_pid} = MessageTracker.get_message_tracker(sharding_key)
       mt_ref = Process.monitor(message_tracker_pid)
 
-      bind(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater} end)
+      Mimic.stub(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater} end)
       MessageTracker.handle_message(message_tracker_pid, message, channel)
 
       send(message_tracker_pid, {:DOWN, :dontcare, :process, channel.pid, :crash})
@@ -114,13 +119,13 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
       data_updater_2_pid = get_mock_data_updater!()
 
       Enum.each([message_tracker_pid, data_updater_1_pid, data_updater_2_pid], &:erlang.trace(&1, true, [:receive]))
-      bind(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater_1_pid} end, calls: 1)
+      Mimic.expect(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater_1_pid} end)
 
       MessageTracker.handle_message(message_tracker_pid, message, channel)
 
       assert_receive {:trace, ^data_updater_1_pid, :receive, {_, {:handle_message, ^message}}}
 
-      bind(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater_2_pid} end, calls: 1)
+      Mimic.expect(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater_2_pid} end)
       kill_data_updater(data_updater_1_pid)
 
       assert_receive {:trace, ^message_tracker_pid, :receive, {:DOWN, _, :process, ^data_updater_1_pid, _}}
@@ -134,33 +139,24 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
     setup :create_message
     setup :setup_mock_channel
     setup :add_on_exit
+    setup :setup_message_tracker
+    setup :setup_data_updater
 
     @tag :message_tracker_message_handling
     test "is successful on valid message", %{
-      sharding_key: sharding_key,
       channel: channel,
-      message: message
+      message: message,
+      message_tracker: message_tracker,
+      data_updater: data_updater
     } do
-      {:ok, message_tracker_pid} = MessageTracker.get_message_tracker(sharding_key)
-      :erlang.trace(message_tracker_pid, true, [:receive])
+      Mimic.expect(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater} end)
+      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end)
 
-      {:ok, data_updater_pid} =
-        GenServer.start_link(DataUpdater,
-          sharding_key: sharding_key,
-          message_handler: MockMessageHandler
-        )
+      MessageTracker.handle_message(message_tracker, message, channel)
 
-      :erlang.trace(data_updater_pid, true, [:receive])
+      assert_receive {:trace, ^data_updater, :receive, {_, {:handle_message, ^message}}}
 
-      bind(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater_pid} end, calls: 1)
-
-      MessageTracker.handle_message(message_tracker_pid, message, channel)
-
-      assert_receive {:trace, ^data_updater_pid, :receive, {_, {:handle_message, ^message}}}
-
-      bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker_pid} end, calls: 1)
-
-      assert_receive {:trace, ^message_tracker_pid, :receive, {_, {_, _}, {:ack_delivery, ^message}}}
+      assert_receive {:trace, ^message_tracker, :receive, {_, {_, _}, {:ack_delivery, ^message}}}
     end
 
     @tag :message_tracker_message_handling
@@ -172,7 +168,7 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
       message_2 = message_fixture(sharding_key)
       {:ok, message_tracker_pid} = MessageTracker.get_message_tracker(sharding_key)
       :erlang.trace(message_tracker_pid, true, [:receive])
-      bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker_pid} end)
+      Mimic.stub(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker_pid} end)
 
       {:ok, data_updater_pid} =
         GenServer.start_link(DataUpdater,
@@ -181,7 +177,7 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
         )
 
       :erlang.trace(data_updater_pid, true, [:receive])
-      bind(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater_pid} end)
+      Mimic.stub(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater_pid} end)
 
       MessageTracker.handle_message(message_tracker_pid, message_1, channel)
       MessageTracker.handle_message(message_tracker_pid, message_2, channel)
@@ -203,15 +199,14 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
     end
 
     test "shuts down if message forces process termination", %{
-      sharding_key: sharding_key,
       channel: channel,
-      message: message
+      message: message,
+      message_tracker: message_tracker,
+      data_updater: data_updater
     } do
       Process.flag(:trap_exit, true)
 
-      {:ok, message_tracker_pid} = MessageTracker.get_message_tracker(sharding_key)
-      :erlang.trace(message_tracker_pid, true, [:receive])
-      mt_ref = Process.monitor(message_tracker_pid)
+      mt_ref = Process.monitor(message_tracker)
 
       MockMessageHandler
       |> expect(:init, fn _ -> {:ok, []} end)
@@ -220,27 +215,19 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
       end)
       |> expect(:terminate, fn _, _ -> :ok end)
 
-      {:ok, data_updater_pid} =
-        GenServer.start_link(DataUpdater,
-          sharding_key: sharding_key,
-          message_handler: MockMessageHandler
-        )
+      du_ref = Process.monitor(data_updater)
 
-      du_ref = Process.monitor(data_updater_pid)
+      Mimic.expect(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater} end)
+      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end)
 
-      bind(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater_pid} end, calls: 1)
+      MessageTracker.handle_message(message_tracker, message, channel)
 
-      MessageTracker.handle_message(message_tracker_pid, message, channel)
+      assert_receive {:trace, ^message_tracker, :receive, {_, {_, _}, {:ack_delivery, ^message}}}
+      assert_receive {:DOWN, ^du_ref, :process, ^data_updater, {:shutdown, :requested}}
+      refute Process.alive?(data_updater)
 
-      bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker_pid} end, calls: 1)
-
-      assert_receive {:trace, ^message_tracker_pid, :receive, {_, {_, _}, {:ack_delivery, ^message}}}
-
-      assert_receive {:DOWN, ^du_ref, :process, ^data_updater_pid, {:shutdown, :requested}}
-      refute Process.alive?(data_updater_pid)
-
-      assert_receive {:DOWN, ^mt_ref, :process, ^message_tracker_pid, {:shutdown, :requested}}
-      refute Process.alive?(message_tracker_pid)
+      assert_receive {:DOWN, ^mt_ref, :process, ^message_tracker, {:shutdown, :requested}}
+      refute Process.alive?(message_tracker)
     end
   end
 
@@ -333,5 +320,20 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
     after
       100 -> false
     end
+  end
+
+  defp setup_message_tracker(context) do
+    %{sharding_key: sharding_key} = context
+    {:ok, message_tracker} = MessageTracker.get_message_tracker(sharding_key)
+    :erlang.trace(message_tracker, true, [:receive])
+    Mimic.allow(DataUpdater, self(), message_tracker)
+
+    %{message_tracker: message_tracker}
+  end
+
+  defp setup_data_updater(context) do
+    %{sharding_key: sharding_key} = context
+    data_updater = Helpers.setup_standalone_data_updater!(MockMessageHandler, sharding_key)
+    %{data_updater: data_updater}
   end
 end

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
-  use EfxCase, async: false
+  use ExUnit.Case, async: false
 
   # We use Mox here because we don't care about the type safety
   # guarantees of Hammox
@@ -16,6 +16,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
   alias Mississippi.Consumer.Test.Placeholder
 
   require Logger
+  require Mimic
 
   @moduletag :unit
 
@@ -25,6 +26,8 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
     start_supervised({Registry, [keys: :unique, name: AMQPDataConsumer.Registry]})
     :ok
   end
+
+  setup {Mimic, :verify_on_exit!}
 
   describe "AMQPDataConsumer message handling:" do
     setup :create_queue_index
@@ -39,9 +42,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
       queue_index: queue_index
     } do
       data_consumer_pid =
-        queue_index
-        |> amqp_data_consumer_fixture()
-        |> start_supervised!()
+        start_amqp_data_consumer!(queue_index)
 
       sharding_key_1 = get_sharding_key()
       sharding_key_2 = get_sharding_key()
@@ -54,7 +55,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
         sharding_key_2 => tracker_2
       }
 
-      bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, trackers[sharding_key_1]} end, calls: 1)
+      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, trackers[sharding_key_1]} end)
 
       payload_1 = get_payload()
       meta_1 = meta_fixture(sharding_key_1)
@@ -69,7 +70,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
       payload_2 = get_payload()
       meta_2 = meta_fixture(sharding_key_2)
 
-      bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, trackers[sharding_key_2]} end, calls: 1)
+      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, trackers[sharding_key_2]} end)
 
       send(data_consumer_pid, {:basic_deliver, payload_2, meta_2})
 
@@ -87,11 +88,9 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
       meta: meta
     } do
       data_consumer_pid =
-        queue_index
-        |> amqp_data_consumer_fixture()
-        |> start_supervised!()
+        start_amqp_data_consumer!(queue_index)
 
-      bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end, calls: 1)
+      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end)
 
       send(data_consumer_pid, {:basic_deliver, payload, meta})
 
@@ -115,13 +114,11 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
       meta: meta
     } do
       data_consumer_pid =
-        queue_index
-        |> amqp_data_consumer_fixture()
-        |> start_supervised!()
+        start_amqp_data_consumer!(queue_index)
 
       :erlang.trace(data_consumer_pid, true, [:receive])
 
-      bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end, calls: 1)
+      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end)
 
       send(data_consumer_pid, {:basic_deliver, payload, meta})
 
@@ -146,13 +143,11 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
       Process.flag(:trap_exit, true)
 
       data_consumer_pid =
-        queue_index
-        |> amqp_data_consumer_fixture()
-        |> start_supervised!()
+        start_amqp_data_consumer!(queue_index)
 
       consumer_ref = Process.monitor(data_consumer_pid)
 
-      bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end, calls: 1)
+      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end)
 
       send(data_consumer_pid, {:basic_deliver, payload, meta})
 
@@ -228,6 +223,12 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
       id: {AMQPDataConsumer, queue_index},
       start: {AMQPDataConsumer, :start_link, [start_link_args]}
     }
+  end
+
+  defp start_amqp_data_consumer!(queue_index) do
+    data_consumer = queue_index |> amqp_data_consumer_fixture() |> start_supervised!()
+    Mimic.allow(MessageTracker, self(), data_consumer)
+    data_consumer
   end
 
   defp get_sharding_key do
