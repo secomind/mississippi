@@ -119,13 +119,13 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
       data_updater_2_pid = get_mock_data_updater!()
 
       Enum.each([message_tracker_pid, data_updater_1_pid, data_updater_2_pid], &:erlang.trace(&1, true, [:receive]))
-      Mimic.expect(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater_1_pid} end)
+      Mimic.expect(DataUpdater, :get_data_updater_process, 1, fn _ -> {:ok, data_updater_1_pid} end)
 
       MessageTracker.handle_message(message_tracker_pid, message, channel)
 
       assert_receive {:trace, ^data_updater_1_pid, :receive, {_, {:handle_message, ^message}}}
 
-      Mimic.expect(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater_2_pid} end)
+      Mimic.expect(DataUpdater, :get_data_updater_process, 1, fn _ -> {:ok, data_updater_2_pid} end)
       kill_data_updater(data_updater_1_pid)
 
       assert_receive {:trace, ^message_tracker_pid, :receive, {:DOWN, _, :process, ^data_updater_1_pid, _}}
@@ -149,8 +149,8 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
       message_tracker: message_tracker,
       data_updater: data_updater
     } do
-      Mimic.expect(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater} end)
-      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end)
+      Mimic.expect(DataUpdater, :get_data_updater_process, 1, fn _ -> {:ok, data_updater} end)
+      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
 
       MessageTracker.handle_message(message_tracker, message, channel)
 
@@ -217,8 +217,8 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
 
       du_ref = Process.monitor(data_updater)
 
-      Mimic.expect(DataUpdater, :get_data_updater_process, fn _ -> {:ok, data_updater} end)
-      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end)
+      Mimic.expect(DataUpdater, :get_data_updater_process, 1, fn _ -> {:ok, data_updater} end)
+      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
 
       MessageTracker.handle_message(message_tracker, message, channel)
 

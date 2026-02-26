@@ -104,7 +104,7 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
       data_updater: data_updater
     } do
       expect(MockMessageHandler, :handle_message, fn _, _, _, _, state -> {:ack, :ok, state} end)
-      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end)
+      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
 
       DataUpdater.handle_message(data_updater, message)
 
@@ -121,7 +121,7 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
         {:discard, :aaaa, state}
       end)
 
-      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end)
+      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
 
       DataUpdater.handle_message(data_updater, message)
 
@@ -143,7 +143,7 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
       expect(MockMessageHandler, :terminate, fn _, _ -> :ok end)
 
       ref = Process.monitor(data_updater)
-      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end)
+      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
 
       DataUpdater.handle_message(data_updater, message)
 

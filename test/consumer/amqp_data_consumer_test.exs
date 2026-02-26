@@ -55,7 +55,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
         sharding_key_2 => tracker_2
       }
 
-      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, trackers[sharding_key_1]} end)
+      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, trackers[sharding_key_1]} end)
 
       payload_1 = get_payload()
       meta_1 = meta_fixture(sharding_key_1)
@@ -70,7 +70,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
       payload_2 = get_payload()
       meta_2 = meta_fixture(sharding_key_2)
 
-      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, trackers[sharding_key_2]} end)
+      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, trackers[sharding_key_2]} end)
 
       send(data_consumer_pid, {:basic_deliver, payload_2, meta_2})
 
@@ -90,7 +90,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
       data_consumer_pid =
         start_amqp_data_consumer!(queue_index)
 
-      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end)
+      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
 
       send(data_consumer_pid, {:basic_deliver, payload, meta})
 
@@ -118,7 +118,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
 
       :erlang.trace(data_consumer_pid, true, [:receive])
 
-      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end)
+      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
 
       send(data_consumer_pid, {:basic_deliver, payload, meta})
 
@@ -147,7 +147,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
 
       consumer_ref = Process.monitor(data_consumer_pid)
 
-      Mimic.expect(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end)
+      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
 
       send(data_consumer_pid, {:basic_deliver, payload, meta})
 
