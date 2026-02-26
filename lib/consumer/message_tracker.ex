@@ -11,8 +11,6 @@ defmodule Mississippi.Consumer.MessageTracker do
   a message gets processed twice, but after all with strange aeons, even death may die.
   """
 
-  use Efx
-
   alias Horde.DynamicSupervisor
   alias Horde.Registry
   alias Mississippi.Consumer.Message
@@ -26,7 +24,7 @@ defmodule Mississippi.Consumer.MessageTracker do
   """
   @spec get_message_tracker(sharding_key :: term()) ::
           {:ok, pid()} | {:error, :message_tracker_start_fail}
-  defeffect get_message_tracker(sharding_key) do
+  def get_message_tracker(sharding_key) do
     name = {:via, Registry, {MessageTracker.Registry, {:sharding_key, sharding_key}}}
 
     # TODO bring back :offload_start (?)

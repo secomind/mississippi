@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 defmodule Mississippi.Consumer.DataUpdater.Test do
-  use EfxCase, async: false
+  use ExUnit.Case, async: false
 
   import Hammox
 
@@ -12,6 +12,9 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
   alias Mississippi.Consumer.DataUpdater.State
   alias Mississippi.Consumer.MessageTracker
   alias Mississippi.Consumer.Test.Placeholder
+  alias Mississippi.DataUpdater.Helpers
+
+  require Mimic
 
   @moduletag :unit
 
@@ -29,60 +32,60 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
     :ok
   end
 
+  setup {Mimic, :verify_on_exit!}
+
   doctest Mississippi.Consumer.DataUpdater
 
   describe "DataUpdater works as an Orleans grain:" do
     setup :setup_mock_message_handler
     setup :create_sharding_key
+    setup :setup_data_updater
 
     @tag :data_updater_orleans
     test "a process is successfully started with a given sharding key", %{
-      sharding_key: sharding_key
+      sharding_key: sharding_key,
+      data_updater: data_updater
     } do
-      {:ok, pid} = DataUpdater.get_data_updater_process(sharding_key)
-
       du_processes =
         Registry.select(DataUpdater.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
 
-      assert {{:sharding_key, sharding_key}, pid} in du_processes
+      assert {{:sharding_key, sharding_key}, data_updater} in du_processes
     end
 
     @tag :data_updater_orleans
     test "a process is not duplicated when using the same sharding key", %{
-      sharding_key: sharding_key
+      sharding_key: sharding_key,
+      data_updater: data_updater
     } do
-      {:ok, pid} = DataUpdater.get_data_updater_process(sharding_key)
-
       du_processes =
         Registry.select(DataUpdater.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
 
-      assert {{:sharding_key, sharding_key}, pid} in du_processes
+      assert {{:sharding_key, sharding_key}, data_updater} in du_processes
 
-      {:ok, ^pid} = DataUpdater.get_data_updater_process(sharding_key)
-      assert {{:sharding_key, sharding_key}, pid} in du_processes
+      {:ok, ^data_updater} = DataUpdater.get_data_updater_process(sharding_key)
+      assert {{:sharding_key, sharding_key}, data_updater} in du_processes
     end
 
     @tag :data_updater_orleans
     test "a process is spawned again if requested after termination", %{
-      sharding_key: sharding_key
+      sharding_key: sharding_key,
+      data_updater: data_updater
     } do
-      {:ok, first_pid} = DataUpdater.get_data_updater_process(sharding_key)
-
       du_processes =
         Registry.select(DataUpdater.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
 
-      assert {{:sharding_key, sharding_key}, first_pid} in du_processes
+      assert {{:sharding_key, sharding_key}, data_updater} in du_processes
 
-      DynamicSupervisor.terminate_child(DataUpdater.Supervisor, first_pid)
+      DynamicSupervisor.terminate_child(DataUpdater.Supervisor, data_updater)
 
       {:ok, second_pid} = DataUpdater.get_data_updater_process(sharding_key)
-      assert first_pid != second_pid
+      assert data_updater != second_pid
 
       du_processes =
         Registry.select(DataUpdater.Registry, [{{:"$1", :"$2", :_}, [], [{{:"$1", :"$2"}}]}])
 
       assert {{:sharding_key, sharding_key}, second_pid} in du_processes
-      refute {{:sharding_key, sharding_key}, first_pid} in du_processes
+      refute {{:sharding_key, sharding_key}, data_updater} in du_processes
     end
   end
 
@@ -92,52 +95,44 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
     setup :create_message
     setup :setup_mock_message_tracker
     setup :add_on_exit
+    setup :setup_data_updater
 
     @tag :data_updater_message_handling
     test "acking when ok", %{
-      sharding_key: sharding_key,
       message: message,
-      message_tracker: message_tracker
+      message_tracker: message_tracker,
+      data_updater: data_updater
     } do
       expect(MockMessageHandler, :handle_message, fn _, _, _, _, state -> {:ack, :ok, state} end)
+      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
 
-      {:ok, data_updater_pid} = DataUpdater.get_data_updater_process(sharding_key)
-
-      :erlang.trace(data_updater_pid, true, [:receive])
-
-      bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end, calls: 1)
-
-      DataUpdater.handle_message(data_updater_pid, message)
+      DataUpdater.handle_message(data_updater, message)
 
       assert_receive {:trace, ^message_tracker, :receive, {_, {_, _}, {:ack_delivery, ^message}}}
     end
 
     @tag :data_updater_message_handling
     test "rejecting when error", %{
-      sharding_key: sharding_key,
       message: message,
-      message_tracker: message_tracker
+      message_tracker: message_tracker,
+      data_updater: data_updater
     } do
       expect(MockMessageHandler, :handle_message, fn _, _, _, _, state ->
         {:discard, :aaaa, state}
       end)
 
-      {:ok, data_updater_pid} = DataUpdater.get_data_updater_process(sharding_key)
+      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
 
-      :erlang.trace(data_updater_pid, true, [:receive])
-
-      bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end, calls: 1)
-
-      DataUpdater.handle_message(data_updater_pid, message)
+      DataUpdater.handle_message(data_updater, message)
 
       assert_receive {:trace, ^message_tracker, :receive, {_, {_, _}, {:reject, ^message}}}
     end
 
     @tag :data_updater_message_handling
     test "terminating when requested", %{
-      sharding_key: sharding_key,
       message: message,
-      message_tracker: message_tracker
+      message_tracker: message_tracker,
+      data_updater: data_updater
     } do
       Process.flag(:trap_exit, true)
 
@@ -147,15 +142,13 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
 
       expect(MockMessageHandler, :terminate, fn _, _ -> :ok end)
 
-      {:ok, data_updater_pid} = DataUpdater.get_data_updater_process(sharding_key)
+      ref = Process.monitor(data_updater)
+      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
 
-      ref = Process.monitor(data_updater_pid)
-      bind(MessageTracker, :get_message_tracker, fn _ -> {:ok, message_tracker} end, calls: 1)
+      DataUpdater.handle_message(data_updater, message)
 
-      DataUpdater.handle_message(data_updater_pid, message)
-
-      assert_receive {:DOWN, ^ref, :process, ^data_updater_pid, {:shutdown, :requested}}
-      refute Process.alive?(data_updater_pid)
+      assert_receive {:DOWN, ^ref, :process, ^data_updater, {:shutdown, :requested}}
+      refute Process.alive?(data_updater)
     end
   end
 
@@ -163,27 +156,19 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
     setup :setup_mock_message_handler
     setup :create_sharding_key
     setup :create_signal
+    setup :add_signal_expectations
+    setup :setup_data_updater
 
     @tag :data_updater_signal_handling
     test "updating the handler state", %{
-      sharding_key: sharding_key,
+      data_updater: data_updater,
       signal: signal
     } do
-      expect(MockMessageHandler, :init, fn _sharding_key ->
-        {:ok, %{signals: []}}
-      end)
+      assert %State{handler_state: %{signals: []}} = :sys.get_state(data_updater)
 
-      expect(MockMessageHandler, :handle_signal, fn signal, _state ->
-        {:ok, %{signals: [signal]}}
-      end)
+      DataUpdater.handle_signal(data_updater, signal)
 
-      {:ok, data_updater_pid} = DataUpdater.get_data_updater_process(sharding_key)
-
-      assert %State{handler_state: %{signals: []}} = :sys.get_state(data_updater_pid)
-
-      DataUpdater.handle_signal(data_updater_pid, signal)
-
-      assert %State{handler_state: %{signals: [^signal]}} = :sys.get_state(data_updater_pid)
+      assert %State{handler_state: %{signals: [^signal]}} = :sys.get_state(data_updater)
     end
   end
 
@@ -218,11 +203,29 @@ defmodule Mississippi.Consumer.DataUpdater.Test do
     context
   end
 
+  defp add_signal_expectations(_context) do
+    expect(MockMessageHandler, :init, fn _sharding_key ->
+      {:ok, %{signals: []}}
+    end)
+
+    expect(MockMessageHandler, :handle_signal, fn signal, _state ->
+      {:ok, %{signals: [signal]}}
+    end)
+
+    :ok
+  end
+
   defp setup_mock_message_tracker(context) do
     {:ok, message_tracker} = GenServer.start(Placeholder, [])
 
     :erlang.trace(message_tracker, true, [:receive])
     Map.put(context, :message_tracker, message_tracker)
+  end
+
+  defp setup_data_updater(context) do
+    %{sharding_key: sharding_key} = context
+    data_updater = Helpers.setup_data_updater!(sharding_key)
+    %{data_updater: data_updater}
   end
 
   defp message_fixture(sharding_key) do

@@ -34,7 +34,7 @@ defmodule Mississippi.MixProject do
       {:amqp, "~> 3.3"},
       {:credo, "~> 1.0", only: [:dev], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :ci], runtime: false},
-      {:efx, "~> 0.1"},
+      {:mimic, "~> 2.3", only: [:dev, :test, :ci]},
       {:elixir_uuid, "~> 1.2"},
       {:ex_check, "~> 0.16", only: [:dev], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
@@ -42,12 +42,11 @@ defmodule Mississippi.MixProject do
       {:current_rabbit_pool, "~> 1.1"},
       {:hammox, "~> 0.7", only: :test},
       {:mix_audit, "~> 2.0", only: [:dev], runtime: false},
-      # Use tagged version when https://github.com/derekkraan/horde/pull/274 appears in a tag
-      {:horde, github: "derekkraan/horde"},
+      {:horde, "~> 0.9"},
       {:nimble_options, "~> 1.0"},
       {:pretty_log, "~> 0.1"},
       {:styler, "~> 1.0.0-rc.1", only: [:dev], runtime: false},
-      {:typed_struct, "~> 0.3.0"}
+      {:typedstruct, "~> 0.5"}
     ]
   end
 

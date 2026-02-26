@@ -12,7 +12,6 @@ defmodule Mississippi.Consumer.DataUpdater do
 
   # We'll be made alive on demand
   use GenServer, restart: :temporary
-  use Efx
 
   alias Horde.DynamicSupervisor
   alias Horde.Registry
@@ -50,7 +49,7 @@ defmodule Mississippi.Consumer.DataUpdater do
   """
   @spec get_data_updater_process(sharding_key :: term()) ::
           {:ok, pid()} | {:error, :data_updater_start_fail}
-  defeffect get_data_updater_process(sharding_key) do
+  def get_data_updater_process(sharding_key) do
     # TODO bring back :offload_start (?)
     case DynamicSupervisor.start_child(
            DataUpdater.Supervisor,
