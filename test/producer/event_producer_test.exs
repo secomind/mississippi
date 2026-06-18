@@ -3,45 +3,42 @@
 
 defmodule Mississippi.Producer.EventsProducer.Test do
   use ExUnit.Case
+  use Mimic
 
-  import Hammox
-
+  alias AMQP.Basic
   alias AMQP.Channel
   alias AMQP.Connection
   alias Mississippi.Producer.EventsProducer
+  alias Mississippi.Producer.EventsProducer.AMQPConnection
   alias Mississippi.Producer.EventsProducer.State
+
+  require IEx
 
   @moduletag :unit
 
   setup do
-    Hammox.set_mox_global()
-    test_process = self()
-    temporary_pid = temporary_process()
+    Mimic.set_mimic_global()
+    channel_pid = spawn(&loop/0)
 
-    MockAMQPConnection
-    |> stub(:init, fn _ -> {:ok, channel_fixture(temporary_pid)} end)
-    |> stub(:adapter, fn ->
-      FakeConnectionAdapter.start(test_process)
-      FakeConnectionAdapter
-    end)
+    stub(AMQPConnection, :init, fn _, _ -> {:ok, channel_fixture(channel_pid)} end)
 
     events_producer_pid =
       start_supervised!(events_producer_fixture())
 
     :erlang.trace(events_producer_pid, true, [:receive])
 
-    %{events_producer_pid: events_producer_pid, channel_pid: temporary_pid}
+    %{events_producer_pid: events_producer_pid, channel_pid: channel_pid}
   end
 
   describe "EventsProducer.publish/2" do
     @tag :events_producer_message_handling
-    test "publishes the message to the channel when connected" do
+    test "publishes the message to the channel when connected", context do
+      %{channel_pid: channel_pid} = context
       valid_payload = payload_fixture()
       valid_opts = publish_options_fixture()
 
+      expect(Basic, :publish, fn %{pid: ^channel_pid}, _, _, ^valid_payload, _ -> :ok end)
       EventsProducer.publish(valid_payload, valid_opts)
-
-      assert_receive {:published, _, _, ^valid_payload}
     end
 
     @tag :events_producer_message_handling
@@ -49,7 +46,7 @@ defmodule Mississippi.Producer.EventsProducer.Test do
       # we need to start a new events producer
       stop_supervised!(EventsProducer)
 
-      stub(MockAMQPConnection, :init, fn _ -> {:error, :event_producer_init_fail} end)
+      stub(AMQPConnection, :init, fn _, _ -> {:error, :event_producer_init_fail} end)
       start_supervised!(events_producer_fixture())
 
       valid_payload = payload_fixture()
@@ -61,7 +58,7 @@ defmodule Mississippi.Producer.EventsProducer.Test do
 
     @tag :events_producer_message_handling
     test "returns an error when reconnecting", args do
-      stub(MockAMQPConnection, :init, fn _ -> {:error, :event_producer_init_fail} end)
+      stub(AMQPConnection, :init, fn _, _ -> {:error, :event_producer_init_fail} end)
       stop_and_await_channel(args.channel_pid)
 
       %State{channel: nil} = :sys.get_state(args.events_producer_pid)
@@ -76,7 +73,7 @@ defmodule Mississippi.Producer.EventsProducer.Test do
 
   @tag :events_producer_fault_tolerance
   test "reconnects if the AMQP connection goes down", args do
-    stub(MockAMQPConnection, :init, fn _ -> {:error, :event_producer_init_fail} end)
+    stub(AMQPConnection, :init, fn _, _ -> {:error, :event_producer_init_fail} end)
     stop_and_await_channel(args.channel_pid)
 
     assert %State{channel: nil} = :sys.get_state(args.events_producer_pid)
@@ -84,7 +81,7 @@ defmodule Mississippi.Producer.EventsProducer.Test do
     me = self()
     reconnected_message = :events_producer_reconnected
 
-    expect(MockAMQPConnection, :init, fn _ ->
+    expect(AMQPConnection, :init, fn _, _ ->
       # send a message to the test process to signal that
       # the events producer tried to (re)initialize the connection
       send(me, reconnected_message)
@@ -125,12 +122,10 @@ defmodule Mississippi.Producer.EventsProducer.Test do
     end
   end
 
-  defp temporary_process do
-    spawn(fn ->
-      receive do
-        _ -> nil
-      end
-    end)
+  defp loop do
+    receive do
+      _ -> loop()
+    end
   end
 
   defp stop_and_await_channel(channel_pid) do
@@ -164,9 +159,9 @@ defmodule Mississippi.Producer.EventsProducer.Test do
     {
       EventsProducer,
       ssl_options: [verify: :verify_none],
-      events_exchange_name: "",
+      events_exchange_name: "mississippi_#{System.unique_integer([:positive])}",
       total_count: System.unique_integer([:positive]),
-      connection: MockAMQPConnection,
+      connection_options: [host: "localhost"],
       reconnection_backoff_ms: 0
     }
   end

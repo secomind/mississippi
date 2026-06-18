@@ -9,10 +9,11 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
 
   use GenServer, restart: :transient
 
+  alias AMQP.Basic
   alias AMQP.Channel
   alias Horde.Registry
   alias Mississippi.Consumer.AMQPDataConsumer
-  alias Mississippi.Consumer.AMQPDataConsumer.ExRabbitPoolConnection
+  alias Mississippi.Consumer.AMQPDataConsumer.AMQPConnection
   alias Mississippi.Consumer.AMQPDataConsumer.State
   alias Mississippi.Consumer.Message
   alias Mississippi.Consumer.MessageTracker
@@ -30,17 +31,22 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
     GenServer.start_link(__MODULE__, args, name: get_queue_via_tuple(index))
   end
 
+  def barrier(queue_name), do: {:data_consumer_started, queue_name}
+
   # Server callbacks
 
   @impl true
   def init(args) do
     Process.flag(:trap_exit, true)
     queue_name = Keyword.fetch!(args, :queue_name)
-    connection = Keyword.get(args, :connection, ExRabbitPoolConnection)
+    exchange_name = Keyword.fetch!(args, :exchange_name)
+    connection_options = Keyword.fetch!(args, :connection_options)
 
     state = %State{
-      connection: connection,
+      connection_options: connection_options,
       queue_name: queue_name,
+      exchange_name: exchange_name,
+      orchestrator: Keyword.get(args, :orchestrator),
       monitors: []
     }
 
@@ -70,6 +76,11 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
 
   # Confirmation sent by the broker after registering this process as a consumer
   def handle_info({:basic_consume_ok, %{consumer_tag: _consumer_tag}}, state) do
+    if state.orchestrator do
+      barrier = barrier(state.queue_name)
+      send(state.orchestrator, barrier)
+    end
+
     {:noreply, state}
   end
 
@@ -86,7 +97,10 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   # Message consumed
   def handle_info({:basic_deliver, payload, meta}, state) do
     %State{channel: channel, monitors: monitors} = state
-    {headers, no_headers_meta} = Map.pop(meta, :headers, [])
+
+    clean_meta = Map.reject(meta, fn {_key, value} -> value == :undefined end)
+    {headers, no_headers_meta} = Map.pop(clean_meta, :headers, [])
+
     headers_map = amqp_headers_to_map(headers)
 
     {timestamp, clean_meta} = Map.pop(no_headers_meta, :timestamp)
@@ -112,7 +126,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
       _ ->
         handle_invalid_msg(message)
         # ACK invalid msg to discard them
-        state.connection.adapter().ack(channel, meta.delivery_tag, [])
+        Basic.ack(channel, meta.delivery_tag, [])
         {:noreply, state}
     end
   end
@@ -151,7 +165,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
   end
 
   defp init_consume(state) do
-    case state.connection.init(state) do
+    case AMQPConnection.init(state.connection_options, state.exchange_name, state.queue_name) do
       {:ok, channel} ->
         Process.link(channel.pid)
 

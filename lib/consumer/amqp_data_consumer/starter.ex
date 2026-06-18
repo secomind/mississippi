@@ -46,25 +46,57 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Starter do
   end
 
   def start_amqp_consumers(queues_config) do
-    children = amqp_data_consumers_childspecs(queues_config)
+    queues = amqp_queues(queues_config)
+    start_children(queues, queues_config)
+
+    wait_children(queues)
+  end
+
+  defp start_children(queues, queues_config) do
+    children = amqp_data_consumers_childspecs(queues, queues_config)
 
     Enum.each(children, fn child ->
       DynamicSupervisor.start_child(AMQPDataConsumer.Supervisor, child)
     end)
   end
 
-  defp amqp_data_consumers_childspecs(queues_config) do
+  defp wait_children(queues) do
+    for {_, queue_name} <- queues do
+      barrier = AMQPDataConsumer.barrier(queue_name)
+
+      receive do
+        ^barrier -> :ok
+      after
+        1000 -> raise "Queue #{queue_name} did not start successfully"
+      end
+    end
+  end
+
+  defp amqp_queues(queues_config) do
     queue_prefix = queues_config[:prefix]
     queue_total = queues_config[:total_count]
     max_index = queue_total - 1
 
     for queue_index <- 0..max_index do
       queue_name = "#{queue_prefix}#{queue_index}"
+      {queue_index, queue_name}
+    end
+  end
 
-      init_args = [
-        queue_name: queue_name,
-        queue_index: queue_index
-      ]
+  defp amqp_data_consumers_childspecs(queues, queues_config) do
+    connection_options = queues_config[:amqp_consumer_options]
+    exchange_name = queues_config[:events_exchange_name]
+    orchestrator = self()
+
+    for {queue_index, queue_name} <- queues do
+      init_args =
+        [
+          queue_name: queue_name,
+          queue_index: queue_index,
+          exchange_name: exchange_name,
+          connection_options: connection_options,
+          orchestrator: orchestrator
+        ]
 
       {AMQPDataConsumer, init_args}
     end

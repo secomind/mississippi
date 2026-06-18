@@ -9,7 +9,7 @@ defmodule Mississippi.Producer.EventsProducer do
   use GenServer
 
   alias AMQP.Basic
-  alias Mississippi.Producer.EventsProducer.ExRabbitPoolConnection
+  alias Mississippi.Producer.EventsProducer.AMQPConnection
   alias Mississippi.Producer.EventsProducer.Options
   alias Mississippi.Producer.EventsProducer.State
 
@@ -36,18 +36,19 @@ defmodule Mississippi.Producer.EventsProducer do
 
   @impl true
   def init(init_opts) do
+    Process.flag(:trap_exit, true)
     events_exchange_name = init_opts[:events_exchange_name]
     queue_count = init_opts[:total_count]
     queue_prefix = init_opts[:prefix]
-    connection = Keyword.get(init_opts, :connection, ExRabbitPoolConnection)
+    connection_options = init_opts[:connection_options]
     reconnection_backoff_ms = Keyword.get(init_opts, :reconnection_backoff_ms, :timer.seconds(10))
 
     state = %State{
       channel: nil,
       events_exchange_name: events_exchange_name,
+      connection_options: connection_options,
       queue_total_count: queue_count,
       queue_prefix: queue_prefix,
-      connection: connection,
       reconnection_backoff_ms: reconnection_backoff_ms
     }
 
@@ -87,15 +88,13 @@ defmodule Mississippi.Producer.EventsProducer do
       |> Keyword.put_new(:timestamp, DateTime.to_unix(DateTime.utc_now()))
 
     queue_index = :erlang.phash2(sharding_key, queue_count)
-    queue_name = "#{queue_prefix}#{queue_index}"
-    # TODO should the producer really declare the queue? Nvm for now, it's idempotent
-    {:ok, _} = state.connection.adapter().declare_queue(channel, queue_name, durable: true)
+    routing_key = "#{queue_prefix}#{queue_index}"
 
     res =
-      state.connection.adapter().publish(
+      Basic.publish(
         channel,
         events_exchange_name,
-        queue_name,
+        routing_key,
         payload,
         full_opts
       )
@@ -107,24 +106,30 @@ defmodule Mississippi.Producer.EventsProducer do
   def handle_info(:init_producer, state), do: {:noreply, init_producer(state)}
 
   @impl true
-  def handle_info({:DOWN, _, :process, _pid, reason}, state) do
-    Logger.warning("RabbitMQ connection lost: #{inspect(reason)}. Trying to reconnect...")
+  def handle_info({:DOWN, channel_ref, :process, _pid, reason}, %{channel_ref: channel_ref} = state) do
+    Logger.warning("RabbitMQ channel crashed: #{inspect(reason)}. Trying to reconnect...")
+    AMQPConnection.close_connection(state.channel)
 
     {:noreply, init_producer(state)}
   end
 
+  @impl true
+  def handle_info({:EXIT, conn_pid, reason}, %{channel: %{conn: %{pid: conn_pid}}} = state) do
+    Logger.warning("RabbitMQ connection lost: #{inspect(reason)}. Trying to reconnect...")
+    {:noreply, init_producer(state)}
+  end
+
   defp init_producer(state) do
-    case state.connection.init(state) do
+    case AMQPConnection.init(state.connection_options, state.events_exchange_name) do
       {:ok, channel} ->
-        Process.monitor(channel.pid)
-
         Logger.debug("EventsProducer initialized")
+        channel_ref = Process.monitor(channel.pid)
 
-        %State{state | channel: channel}
+        %State{state | channel: channel, channel_ref: channel_ref}
 
       {:error, _reason} ->
         schedule_connect(state.reconnection_backoff_ms)
-        %State{state | channel: nil}
+        %State{state | channel: nil, channel_ref: nil}
     end
   end
 

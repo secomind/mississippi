@@ -42,13 +42,6 @@ defmodule Mississippi.Producer.EventsProducer.Options do
                 doc: """
                 Backoff between reconnection attempts. Defaults to 10 seconds.
                 """
-              ],
-              connection: [
-                type: :atom,
-                doc: """
-                AMQP Connection module.
-                Defaults to Mississippi.Producer.EventsProducer.ExRabbitPoolConnection.
-                """
               ]
             ]
           ]

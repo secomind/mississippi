@@ -4,9 +4,6 @@
 defmodule Mississippi.EndToEnd.Test do
   use ExUnit.Case
 
-  import Hammox
-
-  alias Mississippi.Consumer.AMQPDataConsumer.ExRabbitPoolConnection
   alias Mississippi.Producer.EventsProducer
 
   require Logger
@@ -14,13 +11,10 @@ defmodule Mississippi.EndToEnd.Test do
   @moduletag :integration
 
   setup_all do
-    stub_with(MockAMQPConnection, ExRabbitPoolConnection)
-    Hammox.set_mox_global()
-    queue_count = System.unique_integer([:positive])
+    queue_count = :rand.uniform(20)
 
     prefix = "mississippi_test_#{System.unique_integer()}_"
-    # We use the default exchange so that queues are binded using the routing key
-    exchange_name = ""
+    exchange_name = "mississippi_#{System.unique_integer([:positive])}"
 
     producer_options = [
       amqp_producer_options: [host: "localhost"],
@@ -43,14 +37,18 @@ defmodule Mississippi.EndToEnd.Test do
       ]
     ]
 
+    consumer = start_supervised!({Mississippi.Consumer, consumer_options})
+    producer = start_supervised!({Mississippi.Producer, producer_options})
+
     %{
-      producer: start_supervised!({Mississippi.Producer, producer_options}),
-      consumer: start_supervised!({Mississippi.Consumer, consumer_options})
+      producer: producer,
+      consumer: consumer
     }
   end
 
   setup do
     E2EMessageHandler.start_with_receiver(self())
+    Process.sleep(500)
 
     %{
       sharding_key: "sharding_key_#{System.unique_integer()}",

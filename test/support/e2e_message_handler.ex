@@ -16,7 +16,7 @@ defmodule E2EMessageHandler do
   def handle_message(payload, headers, _message_id, timestamp, state) do
     agent_state = Agent.get(__MODULE__, fn s -> s end)
     Process.send(agent_state.receiver, {payload, headers, timestamp}, [])
-    {:ok, :ok, state}
+    {:ack, :ok, state}
   end
 
   @impl Handler

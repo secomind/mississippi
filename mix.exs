@@ -31,7 +31,7 @@ defmodule Mississippi.MixProject do
 
   defp deps do
     [
-      {:amqp, "~> 3.3"},
+      {:amqp, "~> 4.1"},
       {:credo, "~> 1.0", only: [:dev], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :ci], runtime: false},
       {:mimic, "~> 2.3", only: [:dev, :test, :ci]},
@@ -39,7 +39,6 @@ defmodule Mississippi.MixProject do
       {:ex_check, "~> 0.16", only: [:dev], runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
-      {:current_rabbit_pool, "~> 1.1"},
       {:hammox, "~> 0.7", only: :test},
       {:mix_audit, "~> 2.0", only: [:dev], runtime: false},
       {:horde, "~> 0.9"},

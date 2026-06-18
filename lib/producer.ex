@@ -31,34 +31,22 @@ defmodule Mississippi.Producer do
     # Invariant: we use one channel for one queue.
     connection_number = Kernel.ceil(queue_count / channels_per_connection)
 
-    _ =
-      Logger.debug("Have #{queue_count} queues and #{channels_per_connection} channels per connection")
+    events_producer_opts =
+      Keyword.put(opts[:mississippi_config][:queues], :connection_options, opts[:amqp_producer_options])
 
-    _ =
-      Logger.debug(
-        "Have #{connection_number} connections a total of #{connection_number * channels_per_connection} channels"
-      )
+    Logger.debug("Have #{queue_count} queues and #{channels_per_connection} channels per connection")
 
-    events_producer_pool = events_producer_pool_config(connection_number)
+    Logger.debug(
+      "Have #{connection_number} connections a total of #{connection_number * channels_per_connection} channels"
+    )
 
     children = [
-      {ExRabbitPool.PoolSupervisor,
-       rabbitmq_config: opts[:amqp_producer_options], connection_pools: [events_producer_pool]},
-      {EventsProducer, opts[:mississippi_config][:queues]}
+      {EventsProducer, events_producer_opts}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one]
     Supervisor.init(children, opts)
-  end
-
-  defp events_producer_pool_config(connection_number) do
-    [
-      name: {:local, :events_producer_pool},
-      worker_module: ExRabbitPool.Worker.RabbitConnection,
-      size: connection_number,
-      max_overflow: 0
-    ]
   end
 end

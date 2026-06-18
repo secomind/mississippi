@@ -8,7 +8,11 @@ defmodule Mississippi.Consumer do
 
   use Supervisor
 
-  alias Mississippi.Consumer.ConsumersSupervisor
+  alias Horde.DynamicSupervisor
+  alias Horde.Registry
+  alias Mississippi.Consumer.AMQPDataConsumer
+  alias Mississippi.Consumer.DataUpdater
+  alias Mississippi.Consumer.MessageTracker
   alias Mississippi.Consumer.Options
 
   require Logger
@@ -27,38 +31,51 @@ defmodule Mississippi.Consumer do
 
     mississippi_config = opts[:mississippi_config]
 
-    queue_config = mississippi_config[:queues]
+    message_handler = mississippi_config[:message_handler]
 
-    channels_per_connection = amqp_consumer_options[:channels]
+    queues_config = mississippi_config[:queues]
 
-    queue_count = queue_config[:total_count]
+    amqp_data_consumer_config =
+      Keyword.put(queues_config, :amqp_consumer_options, amqp_consumer_options)
 
-    # Invariant: we use one channel for one queue.
-    connection_number = Kernel.ceil(queue_count / channels_per_connection)
+    distribution_strategy =
+      distribution_strategy!(mississippi_config[:cluster_distribution_strategy])
 
-    _ =
-      Logger.debug("Have #{queue_count} queues and #{channels_per_connection} channels per connection")
-
-    _ =
-      Logger.debug(
-        "Have #{connection_number} connections and a total of #{connection_number * channels_per_connection} channels"
-      )
+    Logger.info("ConsumersSupervisor init.")
 
     children = [
-      {ExRabbitPool.PoolSupervisor,
-       rabbitmq_config: amqp_consumer_options, connection_pools: [events_consumer_pool_config(connection_number)]},
-      {ConsumersSupervisor, mississippi_config}
+      {Registry, [keys: :unique, name: DataUpdater.Registry, members: :auto]},
+      {Registry, [keys: :unique, name: MessageTracker.Registry, members: :auto]},
+      {Registry, [keys: :unique, name: AMQPDataConsumer.Registry, members: :auto]},
+      {DynamicSupervisor,
+       strategy: :one_for_one,
+       name: DataUpdater.Supervisor,
+       members: :auto,
+       process_redistribution: :active,
+       extra_arguments: [message_handler: message_handler],
+       distribution_strategy: distribution_strategy},
+      {DynamicSupervisor,
+       strategy: :one_for_one,
+       name: MessageTracker.Supervisor,
+       members: :auto,
+       process_redistribution: :active,
+       distribution_strategy: distribution_strategy},
+      {DynamicSupervisor,
+       strategy: :one_for_one,
+       name: AMQPDataConsumer.Supervisor,
+       members: :auto,
+       process_redistribution: :active,
+       distribution_strategy: distribution_strategy},
+      # This will make queue listeners start after re-sharding in a multi-node cluster
+      {NodeListener, queues_config},
+      # This will make queue listeners start in a single-node cluster
+      {AMQPDataConsumer.Starter, amqp_data_consumer_config}
     ]
 
     Supervisor.init(children, strategy: :rest_for_one)
   end
 
-  defp events_consumer_pool_config(connection_number) do
-    [
-      name: {:local, :events_consumer_pool},
-      worker_module: ExRabbitPool.Worker.RabbitConnection,
-      size: connection_number,
-      max_overflow: 0
-    ]
-  end
+  defp distribution_strategy!(:uniform_quorum), do: Horde.UniformQuorumDistribution
+  defp distribution_strategy!(:uniform_random), do: Horde.UniformRandomDistribution
+  defp distribution_strategy!(:uniform), do: Horde.UniformDistribution
 end

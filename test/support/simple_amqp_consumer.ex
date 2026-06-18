@@ -5,23 +5,33 @@ defmodule SimpleAMQPConsumer do
   @moduledoc false
   use GenServer
 
+  alias Mississippi.Consumer.AMQPDataConsumer.AMQPConnection
+
+  def start_link(init_arg), do: GenServer.start_link(__MODULE__, init_arg)
+
+  def consumer_ready_message(exchange_name, queue_name), do: {:consumer_ready, exchange_name, queue_name}
+
   @impl true
   def init(init_arg) do
     queue_name = Keyword.fetch!(init_arg, :queue_name)
     receiver = Keyword.fetch!(init_arg, :receiver)
+    consumer_options = Keyword.fetch!(init_arg, :consumer_options)
+    exchange = Keyword.fetch!(init_arg, :exchange)
 
-    {:ok, %{queue_name: queue_name, receiver: receiver}, {:continue, :init_consume}}
+    state = %{
+      queue_name: queue_name,
+      receiver: receiver,
+      consumer_options: consumer_options,
+      exchange: exchange
+    }
+
+    {:ok, state, {:continue, :init_consume}}
   end
 
   @impl true
   def handle_continue(:init_consume, state) do
-    conn = ExRabbitPool.get_connection_worker(:events_consumer_pool)
-
-    with {:ok, channel} <- ExRabbitPool.checkout_channel(conn),
-         :ok <- AMQP.Basic.qos(channel),
-         {:ok, _queue} <- AMQP.Queue.declare(channel, state.queue_name, durable: true),
-         # TODO use receiver rather than self()?
-         {:ok, _consumer_tag} <- AMQP.Basic.consume(channel, state.queue_name, self()) do
+    with {:ok, _channel} <-
+           AMQPConnection.init(state.consumer_options, state.exchange, state.queue_name) do
       {:noreply, state}
     end
   end
@@ -29,7 +39,8 @@ defmodule SimpleAMQPConsumer do
   # Message consumed
   @impl true
   def handle_info({:basic_deliver, payload, meta}, state) do
-    {headers, no_headers_meta} = Map.pop(meta, :headers, [])
+    clean_meta = Map.reject(meta, fn {_key, value} -> value == :undefined end)
+    {headers, no_headers_meta} = Map.pop(clean_meta, :headers, [])
     headers_map = amqp_headers_to_map(headers)
 
     {timestamp, _clean_meta} = Map.pop(no_headers_meta, :timestamp)
@@ -40,6 +51,9 @@ defmodule SimpleAMQPConsumer do
 
   @impl true
   def handle_info({:basic_consume_ok, _}, state) do
+    message = consumer_ready_message(state.exchange, state.queue_name)
+    send(state.receiver, message)
+
     {:noreply, state}
   end
 

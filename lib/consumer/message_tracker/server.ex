@@ -9,13 +9,13 @@ defmodule Mississippi.Consumer.MessageTracker.Server do
   # We'll be made alive on demand
   use GenServer, restart: :temporary
 
+  alias AMQP.Basic
   alias Mississippi.Consumer.DataUpdater
   alias Mississippi.Consumer.Message
   alias Mississippi.Consumer.MessageTracker.Server.State
 
   require Logger
 
-  @adapter ExRabbitPool.RabbitMQ
   # TODO make this configurable? (Same as DataUpdater)
   @message_tracker_deactivation_interval_ms :timer.hours(3)
 
@@ -63,7 +63,7 @@ defmodule Mississippi.Consumer.MessageTracker.Server do
 
     case :queue.peek(queue) do
       {:value, ^message} ->
-        @adapter.ack(state.channel, message.meta.delivery_tag)
+        Basic.ack(state.channel, message.meta.delivery_tag)
         new_state = %State{state | queue: :queue.drop(queue)}
         # let's move on to the next message
         {:reply, :ok, new_state, {:continue, :process_next_message}}
@@ -82,7 +82,7 @@ defmodule Mississippi.Consumer.MessageTracker.Server do
 
     case :queue.peek(queue) do
       {:value, ^message} ->
-        @adapter.reject(state.channel, delivery_tag_from_message(message))
+        Basic.reject(state.channel, delivery_tag_from_message(message))
         new_state = %State{state | queue: :queue.drop(queue)}
         # let's move on to the next message
         {:reply, :ok, new_state, {:continue, :process_next_message}}

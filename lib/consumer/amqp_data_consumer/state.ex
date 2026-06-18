@@ -7,8 +7,11 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.State do
 
   typedstruct do
     field :queue_name, String.t(), enforce: true
+    field :exchange_name, String.t(), enforce: true
     field :monitors, list(), enforce: true
+    field :orchestrator, pid()
     field :channel, term()
     field :connection, module()
+    field :connection_options, keyword()
   end
 end

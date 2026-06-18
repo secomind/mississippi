@@ -3,31 +3,30 @@
 
 defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
   use ExUnit.Case, async: false
-
-  # We use Mox here because we don't care about the type safety
-  # guarantees of Hammox
-  import Mox
+  use Mimic
 
   alias AMQP.Channel
+  alias AMQP.Connection
+  alias AMQP.Exchange
   alias Horde.Registry
   alias Mississippi.Consumer.AMQPDataConsumer
   alias Mississippi.Consumer.AMQPDataConsumer.State
   alias Mississippi.Consumer.MessageTracker
   alias Mississippi.Consumer.Test.Placeholder
+  alias Mississippi.Producer.EventsProducer.AMQPConnection
 
   require Logger
   require Mimic
 
-  @moduletag :unit
+  @moduletag :integration
 
   doctest Mississippi.Consumer.AMQPDataConsumer
 
   setup_all do
     start_supervised({Registry, [keys: :unique, name: AMQPDataConsumer.Registry]})
-    :ok
+    exchange_name = create_exchange()
+    %{exchange_name: exchange_name}
   end
-
-  setup {Mimic, :verify_on_exit!}
 
   describe "AMQPDataConsumer message handling:" do
     setup :create_queue_index
@@ -36,13 +35,11 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
     setup :create_meta
     setup :setup_mock_message_tracker
     setup :setup_mox
+    setup :start_consumer
 
     @tag :data_consumer_message_handling
-    test "Messages are forwarded to different trackers based on sharding key", %{
-      queue_index: queue_index
-    } do
-      data_consumer_pid =
-        start_amqp_data_consumer!(queue_index)
+    test "Messages are forwarded to different trackers based on sharding key", context do
+      data_consumer_pid = context.data_consumer_pid
 
       sharding_key_1 = get_sharding_key()
       sharding_key_2 = get_sharding_key()
@@ -55,7 +52,9 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
         sharding_key_2 => tracker_2
       }
 
-      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, trackers[sharding_key_1]} end)
+      expect(MessageTracker, :get_message_tracker, 1, fn _ ->
+        {:ok, trackers[sharding_key_1]}
+      end)
 
       payload_1 = get_payload()
       meta_1 = meta_fixture(sharding_key_1)
@@ -70,7 +69,9 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
       payload_2 = get_payload()
       meta_2 = meta_fixture(sharding_key_2)
 
-      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, trackers[sharding_key_2]} end)
+      expect(MessageTracker, :get_message_tracker, 1, fn _ ->
+        {:ok, trackers[sharding_key_2]}
+      end)
 
       send(data_consumer_pid, {:basic_deliver, payload_2, meta_2})
 
@@ -82,15 +83,12 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
 
     @tag :data_consumer_message_handling
     test "AMQPDataConsumer monitors a MessageTracker when starting to forward messages", %{
-      queue_index: queue_index,
+      data_consumer_pid: data_consumer_pid,
       message_tracker: message_tracker,
       payload: payload,
       meta: meta
     } do
-      data_consumer_pid =
-        start_amqp_data_consumer!(queue_index)
-
-      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
+      expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
 
       send(data_consumer_pid, {:basic_deliver, payload, meta})
 
@@ -105,20 +103,18 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
     setup :create_meta
     setup :setup_mock_message_tracker
     setup :setup_mox
+    setup :start_consumer
 
     @tag :data_consumer_fault_tolerance
     test "a process stays up when a monitored MessageTracker exits normally", %{
-      queue_index: queue_index,
+      data_consumer_pid: data_consumer_pid,
       message_tracker: message_tracker,
       payload: payload,
       meta: meta
     } do
-      data_consumer_pid =
-        start_amqp_data_consumer!(queue_index)
-
       :erlang.trace(data_consumer_pid, true, [:receive])
 
-      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
+      expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
 
       send(data_consumer_pid, {:basic_deliver, payload, meta})
 
@@ -135,19 +131,16 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
 
     @tag :data_consumer_fault_tolerance
     test "a process crashes if the related MessageTracker crashes", %{
-      queue_index: queue_index,
+      data_consumer_pid: data_consumer_pid,
       message_tracker: message_tracker,
       payload: payload,
       meta: meta
     } do
       Process.flag(:trap_exit, true)
 
-      data_consumer_pid =
-        start_amqp_data_consumer!(queue_index)
-
       consumer_ref = Process.monitor(data_consumer_pid)
 
-      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
+      expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, message_tracker} end)
 
       send(data_consumer_pid, {:basic_deliver, payload, meta})
 
@@ -168,12 +161,7 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
   defp setup_mox(context) do
     mock_channel = %Channel{pid: self()}
 
-    MockAMQPConnection
-    |> stub(:init, fn _ -> {:ok, mock_channel} end)
-    |> stub(:adapter, fn -> ExRabbitPool.FakeRabbitMQ end)
-
-    Mox.set_mox_global()
-
+    stub(AMQPConnection, :init, fn _, _ -> {:ok, mock_channel} end)
     context
   end
 
@@ -211,12 +199,13 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
     }
   end
 
-  defp amqp_data_consumer_fixture(queue_index) do
+  defp amqp_data_consumer_fixture(exchange_name, queue_index) do
     start_link_args =
       [
+        exchange_name: exchange_name,
         queue_index: queue_index,
         queue_name: "queue_#{queue_index}",
-        connection: MockAMQPConnection
+        connection_options: [host: "localhost"]
       ]
 
     %{
@@ -225,9 +214,9 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
     }
   end
 
-  defp start_amqp_data_consumer!(queue_index) do
-    data_consumer = queue_index |> amqp_data_consumer_fixture() |> start_supervised!()
-    Mimic.allow(MessageTracker, self(), data_consumer)
+  defp start_amqp_data_consumer!(exchange_name, queue_index) do
+    data_consumer = exchange_name |> amqp_data_consumer_fixture(queue_index) |> start_supervised!()
+    allow(MessageTracker, self(), data_consumer)
     data_consumer
   end
 
@@ -248,5 +237,23 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
 
   def kill_message_tracker(message_tracker) do
     GenServer.cast(message_tracker, :die)
+  end
+
+  defp start_consumer(context) do
+    %{queue_index: queue_index, exchange_name: exchange_name} = context
+    data_consumer_pid = start_amqp_data_consumer!(exchange_name, queue_index)
+    %{data_consumer_pid: data_consumer_pid}
+  end
+
+  defp create_exchange do
+    exchange = "mississippi_#{System.unique_integer([:positive])}"
+
+    {:ok, conn} = Connection.open(host: "localhost")
+    {:ok, channel} = Channel.open(conn)
+    :ok = Exchange.declare(channel, exchange, :direct)
+    Channel.close(channel)
+    Connection.close(conn)
+
+    exchange
   end
 end
