@@ -42,7 +42,8 @@ defmodule Mississippi.MixProject do
       {:current_rabbit_pool, "~> 1.1"},
       {:hammox, "~> 0.7", only: :test},
       {:mix_audit, "~> 2.0", only: [:dev], runtime: false},
-      {:horde, "~> 0.9"},
+      # https://github.com/elixir-horde/horde/pull/291
+      {:horde, github: "noaccOS/horde", branch: "push-ozyqtonylvpv"},
       {:nimble_options, "~> 1.0"},
       {:pretty_log, "~> 0.1"},
       {:styler, "~> 1.0.0-rc.1", only: [:dev], runtime: false},
