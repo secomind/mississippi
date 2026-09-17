@@ -208,7 +208,9 @@ defmodule Mississippi.Consumer.DataUpdater do
 
   defp reject_message!(%Message{} = message, sharding_key, reason) do
     _ =
-      Logger.warning("Error handling message #{inspect(message.meta.message_id)}, reason #{inspect(reason)}")
+      Logger.warning(
+        "Error handling message #{inspect(message.meta.message_id)}, reason #{inspect(reason)}"
+      )
 
     {:ok, message_tracker} = MessageTracker.get_message_tracker(sharding_key)
     MessageTracker.reject(message_tracker, message)

@@ -8,6 +8,7 @@ defmodule Mississippi.Integration.Producer.Test do
 
   alias Mississippi.Consumer.AMQPDataConsumer.ExRabbitPoolConnection
   alias Mississippi.Producer.EventsProducer
+  alias Mississippi.Producer.EventsProducer.Worker
 
   require Logger
 
@@ -17,7 +18,7 @@ defmodule Mississippi.Integration.Producer.Test do
     stub_with(MockAMQPConnection, ExRabbitPoolConnection)
     Hammox.set_mox_global()
 
-    queue_count = System.unique_integer([:positive])
+    queue_count = :rand.uniform(128)
     prefix = "mississippi_test_#{System.unique_integer()}_"
     # We use the default exchange so that queues are binded using the routing key
     exchange_name = ""
@@ -31,8 +32,10 @@ defmodule Mississippi.Integration.Producer.Test do
 
     start_consumer_pool!()
 
+    start_supervised!({Mississippi.Producer, producer_options})
+    event_producer_pids(queue_count)
+
     %{
-      producer: start_supervised!({Mississippi.Producer, producer_options}),
       queue_count: queue_count,
       queue_prefix: prefix
     }
@@ -133,5 +136,17 @@ defmodule Mississippi.Integration.Producer.Test do
     E2EMessageHandler.start_with_receiver(self())
 
     context
+  end
+
+  defp event_producer_pids(total_count) do
+    last_index = total_count - 1
+
+    0..last_index
+    |> Enum.map(&{&1, event_producer_pid(&1)})
+  end
+
+  def event_producer_pid(queue_index) do
+    Worker.via_tuple(queue_index)
+    |> GenServer.whereis()
   end
 end

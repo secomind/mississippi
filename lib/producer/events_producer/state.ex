@@ -6,11 +6,11 @@ defmodule Mississippi.Producer.EventsProducer.State do
   use TypedStruct
 
   typedstruct do
+    field :queue_name, String.t(), enforce: true
+    field :queue_index, non_neg_integer(), enforce: true
     field :events_exchange_name, String.t(), enforce: true
-    field :queue_prefix, String.t(), enforce: true
-    field :queue_total_count, pos_integer(), enforce: true
     field :channel, term()
     field :connection, module()
-    field :reconnection_backoff_ms, non_neg_integer()
+    field :reconnection_backoff_ms, non_neg_integer(), default: 1_000
   end
 end

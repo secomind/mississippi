@@ -37,7 +37,9 @@ defmodule Mississippi.Consumer do
     connection_number = Kernel.ceil(queue_count / channels_per_connection)
 
     _ =
-      Logger.debug("Have #{queue_count} queues and #{channels_per_connection} channels per connection")
+      Logger.debug(
+        "Have #{queue_count} queues and #{channels_per_connection} channels per connection"
+      )
 
     _ =
       Logger.debug(
@@ -46,7 +48,8 @@ defmodule Mississippi.Consumer do
 
     children = [
       {ExRabbitPool.PoolSupervisor,
-       rabbitmq_config: amqp_consumer_options, connection_pools: [events_consumer_pool_config(connection_number)]},
+       rabbitmq_config: amqp_consumer_options,
+       connection_pools: [events_consumer_pool_config(connection_number)]},
       {ConsumersSupervisor, mississippi_config}
     ]
 

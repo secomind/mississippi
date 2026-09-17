@@ -46,7 +46,6 @@ defmodule Mississippi.MixProject do
       {:horde, github: "noaccOS/horde", branch: "push-ozyqtonylvpv"},
       {:nimble_options, "~> 1.0"},
       {:pretty_log, "~> 0.1"},
-      {:styler, "~> 1.0.0-rc.1", only: [:dev], runtime: false},
       {:typedstruct, "~> 0.5"}
     ]
   end

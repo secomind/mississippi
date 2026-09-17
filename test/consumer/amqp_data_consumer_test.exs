@@ -55,7 +55,9 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
         sharding_key_2 => tracker_2
       }
 
-      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, trackers[sharding_key_1]} end)
+      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ ->
+        {:ok, trackers[sharding_key_1]}
+      end)
 
       payload_1 = get_payload()
       meta_1 = meta_fixture(sharding_key_1)
@@ -70,7 +72,9 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
       payload_2 = get_payload()
       meta_2 = meta_fixture(sharding_key_2)
 
-      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ -> {:ok, trackers[sharding_key_2]} end)
+      Mimic.expect(MessageTracker, :get_message_tracker, 1, fn _ ->
+        {:ok, trackers[sharding_key_2]}
+      end)
 
       send(data_consumer_pid, {:basic_deliver, payload_2, meta_2})
 
@@ -126,7 +130,8 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
 
       kill_message_tracker(message_tracker)
 
-      assert_receive {:trace, ^data_consumer_pid, :receive, {:DOWN, _, :process, ^message_tracker, :normal}}
+      assert_receive {:trace, ^data_consumer_pid, :receive,
+                      {:DOWN, _, :process, ^message_tracker, :normal}}
 
       assert Process.alive?(data_consumer_pid)
 
