@@ -6,8 +6,6 @@ defmodule Mississippi.EndToEnd.Test do
 
   alias Mississippi.Producer.EventsProducer
 
-  require Logger
-
   @moduletag :integration
 
   setup_all do

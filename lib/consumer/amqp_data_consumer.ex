@@ -65,7 +65,10 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
 
   # This is a Message Tracker deactivating itself normally, either for timeout
   # or because its DataUpdater was explicitly stopped. Just remove its monitor.
-  def handle_info({:DOWN, _, :process, pid, reason}, %State{channel: %Channel{pid: chan_pid}} = state)
+  def handle_info(
+        {:DOWN, _, :process, pid, reason},
+        %State{channel: %Channel{pid: chan_pid}} = state
+      )
       when pid != chan_pid and reason in [:normal, {:shutdown, :requested}] do
     %State{monitors: monitors} = state
     new_monitors = List.delete(monitors, pid)
@@ -175,12 +178,12 @@ defmodule Mississippi.Consumer.AMQPDataConsumer do
 
         Logger.debug("AMQPDataConsumer for queue #{state.queue_name} initialized")
 
-        %State{state | channel: channel}
+        %{state | channel: channel}
 
       {:error, _reason} ->
         schedule_connect()
 
-        %State{state | channel: nil}
+        %{state | channel: nil}
     end
   end
 

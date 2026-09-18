@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 Mimic.copy(AMQP.Basic)
+Mimic.copy(AMQP.Queue)
 Mimic.copy(Mississippi.Consumer.DataUpdater)
 Mimic.copy(Mississippi.Consumer.MessageTracker)
 Mimic.copy(Mississippi.Producer.EventsProducer.AMQPConnection)

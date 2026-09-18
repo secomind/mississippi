@@ -4,141 +4,39 @@
 defmodule Mississippi.Producer.EventsProducer do
   @moduledoc """
   The entry point for publishing messages on Mississippi.
+
+  Publish is now sharded: it hashes the `sharding_key` and routes the
+  message to the per-queue `Worker` that owns the corresponding queue.
   """
 
-  use GenServer
-
   alias AMQP.Basic
-  alias Mississippi.Producer.EventsProducer.AMQPConnection
+  alias Horde.Registry
+  alias Mississippi.Producer.EventsProducer
   alias Mississippi.Producer.EventsProducer.Options
-  alias Mississippi.Producer.EventsProducer.State
-
-  require Logger
+  alias Mississippi.Producer.EventsProducer.Worker
 
   # API
 
-  def start_link(args) do
-    GenServer.start_link(__MODULE__, args, name: __MODULE__)
-  end
-
   @doc """
-  Publish a message on Mississippi AMQP queues. The call is blocking, as only one message at a time can be published.
+  Publish a message on Mississippi AMQP queues. The call is blocking, as only one message at a time can be published on a given shard.
   """
-  @type publish_opts() :: [unquote(NimbleOptions.option_typespec(Options.publish_opts()))]
-  @spec publish(payload :: binary(), opts :: publish_opts()) ::
-          :ok | {:error, :reconnecting} | Basic.error()
+  @type publish_opts() :: keyword()
+  @type mississippi_config() :: keyword()
+  @spec publish(payload :: binary(), publish_opts :: publish_opts()) ::
+          :ok | {:error, :reconnecting, :events_producer_uninitialized} | Basic.error()
   def publish(payload, opts) do
-    valid_opts = NimbleOptions.validate!(opts, Options.publish_opts())
-    GenServer.call(__MODULE__, {:publish, payload, valid_opts})
-  end
+    publish_opts = NimbleOptions.validate!(opts, Options.publish_opts())
+    sharding_key = publish_opts[:sharding_key]
 
-  # Server callbacks
+    case Registry.lookup(EventsProducer.Registry, :events_producer_config) do
+      [{_pid, queues_config}] ->
+        total_count = Keyword.fetch!(queues_config, :total_count)
 
-  @impl true
-  def init(init_opts) do
-    Process.flag(:trap_exit, true)
-    events_exchange_name = init_opts[:events_exchange_name]
-    queue_count = init_opts[:total_count]
-    queue_prefix = init_opts[:prefix]
-    connection_options = init_opts[:connection_options]
-    reconnection_backoff_ms = Keyword.get(init_opts, :reconnection_backoff_ms, :timer.seconds(10))
+        Worker.for_sharding_key(sharding_key, total_count)
+        |> Worker.publish(payload, publish_opts)
 
-    state = %State{
-      channel: nil,
-      events_exchange_name: events_exchange_name,
-      connection_options: connection_options,
-      queue_total_count: queue_count,
-      queue_prefix: queue_prefix,
-      reconnection_backoff_ms: reconnection_backoff_ms
-    }
-
-    {:ok, init_producer(state)}
-  end
-
-  @impl true
-  def handle_call({:publish, _, _}, _from, %State{channel: nil} = state) do
-    # We're currently in reconnecting state
-    {:reply, {:error, :reconnecting}, state}
-  end
-
-  @impl true
-  def handle_call({:publish, payload, opts}, _from, state) do
-    sharding_key = Keyword.fetch!(opts, :sharding_key)
-
-    %State{
-      channel: channel,
-      events_exchange_name: events_exchange_name,
-      queue_total_count: queue_count,
-      queue_prefix: queue_prefix
-    } = state
-
-    headers =
-      opts
-      |> Keyword.get(:headers, [])
-      |> Keyword.put(:sharding_key, :erlang.term_to_binary(sharding_key))
-
-    # TODO: handle basic.return
-    full_opts =
-      opts
-      |> Keyword.delete(:sharding_key)
-      |> Keyword.put(:persistent, true)
-      |> Keyword.put(:mandatory, true)
-      |> Keyword.put(:headers, headers)
-      |> Keyword.put_new(:message_id, generate_message_id())
-      |> Keyword.put_new(:timestamp, DateTime.to_unix(DateTime.utc_now()))
-
-    queue_index = :erlang.phash2(sharding_key, queue_count)
-    routing_key = "#{queue_prefix}#{queue_index}"
-
-    res =
-      Basic.publish(
-        channel,
-        events_exchange_name,
-        routing_key,
-        payload,
-        full_opts
-      )
-
-    {:reply, res, state}
-  end
-
-  @impl true
-  def handle_info(:init_producer, state), do: {:noreply, init_producer(state)}
-
-  @impl true
-  def handle_info({:DOWN, channel_ref, :process, _pid, reason}, %{channel_ref: channel_ref} = state) do
-    Logger.warning("RabbitMQ channel crashed: #{inspect(reason)}. Trying to reconnect...")
-    AMQPConnection.close_connection(state.channel)
-
-    {:noreply, init_producer(state)}
-  end
-
-  @impl true
-  def handle_info({:EXIT, conn_pid, reason}, %{channel: %{conn: %{pid: conn_pid}}} = state) do
-    Logger.warning("RabbitMQ connection lost: #{inspect(reason)}. Trying to reconnect...")
-    {:noreply, init_producer(state)}
-  end
-
-  defp init_producer(state) do
-    case AMQPConnection.init(state.connection_options, state.events_exchange_name) do
-      {:ok, channel} ->
-        Logger.debug("EventsProducer initialized")
-        channel_ref = Process.monitor(channel.pid)
-
-        %State{state | channel: channel, channel_ref: channel_ref}
-
-      {:error, _reason} ->
-        schedule_connect(state.reconnection_backoff_ms)
-        %State{state | channel: nil, channel_ref: nil}
+      [] ->
+        {:error, :events_producer_uninitialized}
     end
-  end
-
-  defp schedule_connect(backoff) do
-    _ = Logger.warning("Retrying connection in #{backoff} ms")
-    Process.send_after(self(), :init_producer, backoff)
-  end
-
-  defp generate_message_id do
-    UUID.uuid4()
   end
 end

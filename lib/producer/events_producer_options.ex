@@ -44,6 +44,13 @@ defmodule Mississippi.Producer.EventsProducer.Options do
                 """
               ]
             ]
+          ],
+          cluster_distribution_strategy: [
+            type: {:in, [:uniform_quorum, :uniform_random, :uniform]},
+            default: :uniform_quorum,
+            doc: """
+            The strategy to use for redistributing producer processes within the cluster.
+            """
           ]
         ]
       ]
