@@ -17,8 +17,8 @@ defmodule FakeConnectionAdapter do
     end
   end
 
-  def start(parent_process) do
-    Agent.start(fn -> %State{parent_process: parent_process} end, name: __MODULE__)
+  def start_link(parent_process) do
+    Agent.start_link(fn -> %State{parent_process: parent_process} end, name: __MODULE__)
   end
 
   def declare_queue(channel, queue_name, opts \\ []) do

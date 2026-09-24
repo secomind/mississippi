@@ -25,6 +25,8 @@ defmodule Mississippi.Consumer.Options.Test do
 
   test "does not allow invalid distribution strategies" do
     opts = [mississippi_config: [cluster_distribution_strategy: :not_a_distribution_strategy]]
-    assert {:error, %{key: :cluster_distribution_strategy}} = NimbleOptions.validate(opts, @schema)
+
+    assert {:error, %{key: :cluster_distribution_strategy}} =
+             NimbleOptions.validate(opts, @schema)
   end
 end
