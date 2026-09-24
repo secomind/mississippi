@@ -9,7 +9,8 @@ defmodule SimpleAMQPConsumer do
 
   def start_link(init_arg), do: GenServer.start_link(__MODULE__, init_arg)
 
-  def consumer_ready_message(exchange_name, queue_name), do: {:consumer_ready, exchange_name, queue_name}
+  def consumer_ready_message(exchange_name, queue_name),
+    do: {:consumer_ready, exchange_name, queue_name}
 
   @impl true
   def init(init_arg) do

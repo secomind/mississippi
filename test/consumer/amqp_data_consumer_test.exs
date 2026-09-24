@@ -15,9 +15,6 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
   alias Mississippi.Consumer.Test.Placeholder
   alias Mississippi.Producer.EventsProducer.AMQPConnection
 
-  require Logger
-  require Mimic
-
   @moduletag :integration
 
   doctest Mississippi.Consumer.AMQPDataConsumer
@@ -122,7 +119,8 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
 
       kill_message_tracker(message_tracker)
 
-      assert_receive {:trace, ^data_consumer_pid, :receive, {:DOWN, _, :process, ^message_tracker, :normal}}
+      assert_receive {:trace, ^data_consumer_pid, :receive,
+                      {:DOWN, _, :process, ^message_tracker, :normal}}
 
       assert Process.alive?(data_consumer_pid)
 
@@ -215,7 +213,9 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Test do
   end
 
   defp start_amqp_data_consumer!(exchange_name, queue_index) do
-    data_consumer = exchange_name |> amqp_data_consumer_fixture(queue_index) |> start_supervised!()
+    data_consumer =
+      exchange_name |> amqp_data_consumer_fixture(queue_index) |> start_supervised!()
+
     allow(MessageTracker, self(), data_consumer)
     data_consumer
   end

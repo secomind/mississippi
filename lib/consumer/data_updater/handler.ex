@@ -38,9 +38,11 @@ defmodule Mississippi.Consumer.DataUpdater.Handler do
               state :: handler_state
             ) ::
               {:ack, result :: term(), new_state :: handler_state}
-              | {:ack, result :: term(), new_state :: handler_state, {:continue, continue_arg :: term()}}
+              | {:ack, result :: term(), new_state :: handler_state,
+                 {:continue, continue_arg :: term()}}
               | {:discard, reason :: term(), new_state :: handler_state}
-              | {:discard, reason :: term(), new_state :: handler_state, {:continue, continue_arg :: term()}}
+              | {:discard, reason :: term(), new_state :: handler_state,
+                 {:continue, continue_arg :: term()}}
               | {:stop, reason :: term(), action :: :ack | :discard, new_state :: handler_state}
 
   @doc """

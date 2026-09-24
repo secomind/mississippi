@@ -30,7 +30,9 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.AMQPConnection do
       {:ok, channel}
     else
       {:error, reason} ->
-        Logger.warning("Error initializing AMQPDataConsumer on queue #{queue_name}: #{inspect(reason)}")
+        Logger.warning(
+          "Error initializing AMQPDataConsumer on queue #{queue_name}: #{inspect(reason)}"
+        )
 
         {:error, reason}
     end

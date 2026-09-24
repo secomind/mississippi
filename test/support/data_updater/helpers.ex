@@ -10,9 +10,6 @@ defmodule Mississippi.DataUpdater.Helpers do
   alias Mississippi.Consumer.DataUpdater.Handler.Impl
   alias Mississippi.Consumer.MessageTracker
 
-  require Hammox
-  require Mimic
-
   def setup_data_updater!(sharding_key) do
     {:ok, data_updater} =
       DataUpdater.get_data_updater_process(sharding_key)

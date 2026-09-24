@@ -14,7 +14,6 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
   alias Mississippi.Consumer.Test.Placeholder
   alias Mississippi.DataUpdater.Helpers
 
-  require Logger
   require Mimic
 
   @moduletag :unit
@@ -22,7 +21,9 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
   setup_all do
     start_supervised({Registry, [keys: :unique, name: MessageTracker.Registry, members: :auto]})
 
-    start_supervised({DynamicSupervisor, strategy: :one_for_one, name: MessageTracker.Supervisor, members: :auto})
+    start_supervised(
+      {DynamicSupervisor, strategy: :one_for_one, name: MessageTracker.Supervisor, members: :auto}
+    )
 
     :ok
   end
@@ -144,17 +145,28 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
       data_updater_1_pid = get_mock_data_updater!()
       data_updater_2_pid = get_mock_data_updater!()
 
-      Enum.each([message_tracker_pid, data_updater_1_pid, data_updater_2_pid], &:erlang.trace(&1, true, [:receive]))
-      Mimic.expect(DataUpdater, :get_data_updater_process, 1, fn _ -> {:ok, data_updater_1_pid} end)
+      Enum.each(
+        [message_tracker_pid, data_updater_1_pid, data_updater_2_pid],
+        &:erlang.trace(&1, true, [:receive])
+      )
+
+      Mimic.expect(DataUpdater, :get_data_updater_process, 1, fn _ ->
+        {:ok, data_updater_1_pid}
+      end)
 
       MessageTracker.handle_message(message_tracker_pid, message, channel)
 
       assert_receive {:trace, ^data_updater_1_pid, :receive, {_, {:handle_message, ^message}}}
 
-      Mimic.expect(DataUpdater, :get_data_updater_process, 1, fn _ -> {:ok, data_updater_2_pid} end)
+      Mimic.expect(DataUpdater, :get_data_updater_process, 1, fn _ ->
+        {:ok, data_updater_2_pid}
+      end)
+
       kill_data_updater(data_updater_1_pid)
 
-      assert_receive {:trace, ^message_tracker_pid, :receive, {:DOWN, _, :process, ^data_updater_1_pid, _}}
+      assert_receive {:trace, ^message_tracker_pid, :receive,
+                      {:DOWN, _, :process, ^data_updater_1_pid, _}}
+
       assert_receive {:trace, ^data_updater_2_pid, :receive, {_, {:handle_message, ^message}}}
     end
   end
@@ -208,15 +220,18 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
       MessageTracker.handle_message(message_tracker_pid, message_1, channel)
       MessageTracker.handle_message(message_tracker_pid, message_2, channel)
 
-      assert_receive {:trace, ^data_updater_pid, :receive, {_, {:handle_message, first_handled_message}}}
+      assert_receive {:trace, ^data_updater_pid, :receive,
+                      {_, {:handle_message, first_handled_message}}}
 
       assert_receive {:trace, ^message_tracker_pid, :receive,
                       {:"$gen_call", {^data_updater_pid, _}, {:ack_delivery, first_acked_message}}}
 
-      assert_receive {:trace, ^data_updater_pid, :receive, {_, {:handle_message, second_handled_message}}}
+      assert_receive {:trace, ^data_updater_pid, :receive,
+                      {_, {:handle_message, second_handled_message}}}
 
       assert_receive {:trace, ^message_tracker_pid, :receive,
-                      {:"$gen_call", {^data_updater_pid, _}, {:ack_delivery, second_acked_message}}}
+                      {:"$gen_call", {^data_updater_pid, _},
+                       {:ack_delivery, second_acked_message}}}
 
       assert first_handled_message == message_1
       assert first_acked_message == message_1
@@ -331,7 +346,8 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
       {:trace, ^registry_pid, :receive,
        {:crdt_update,
         [
-          {:add, {:key, {:sharding_key, ^sharding_key}}, {{Mississippi.Consumer.MessageTracker.Registry, _}, _, _}}
+          {:add, {:key, {:sharding_key, ^sharding_key}},
+           {{Mississippi.Consumer.MessageTracker.Registry, _}, _, _}}
         ]}} ->
         true
     after
@@ -341,7 +357,8 @@ defmodule Mississippi.Consumer.MessageTracker.Test do
 
   defp sharding_key_removed(registry_pid, sharding_key) do
     receive do
-      {:trace, ^registry_pid, :receive, {:crdt_update, [{:remove, {:key, {:sharding_key, ^sharding_key}}}]}} ->
+      {:trace, ^registry_pid, :receive,
+       {:crdt_update, [{:remove, {:key, {:sharding_key, ^sharding_key}}}]}} ->
         true
     after
       100 -> false

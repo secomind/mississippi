@@ -39,6 +39,7 @@ defmodule Mississippi.Producer.Options do
             default: 10,
             doc: """
             The number of AMQP channels to open for each AMQP connection.
+            This option is deprecated and will be ignored.
             """
           ]
         ]

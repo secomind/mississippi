@@ -5,13 +5,12 @@ defmodule Mississippi.Integration.Producer.Test do
   use ExUnit.Case
 
   alias Mississippi.Producer.EventsProducer
-
-  require Logger
+  alias Mississippi.Producer.EventsProducer.Worker
 
   @moduletag :integration
 
   setup_all do
-    queue_count = System.unique_integer([:positive])
+    queue_count = :rand.uniform(128)
     prefix = "mississippi_test_#{System.unique_integer()}_"
     exchange_name = "mississippi_#{System.unique_integer([:positive])}"
 
@@ -22,8 +21,10 @@ defmodule Mississippi.Integration.Producer.Test do
       ]
     ]
 
+    start_supervised!({Mississippi.Producer, producer_options})
+    event_producer_pids(queue_count)
+
     %{
-      producer: start_supervised!({Mississippi.Producer, producer_options}),
       exchange_name: exchange_name,
       queue_count: queue_count,
       queue_prefix: prefix
@@ -70,6 +71,7 @@ defmodule Mississippi.Integration.Producer.Test do
       payload: payload
     } do
       timestamp = DateTime.to_unix(DateTime.utc_now())
+
       EventsProducer.publish(payload, sharding_key: sharding_key, timestamp: timestamp)
 
       assert_receive {^payload, _headers, ^timestamp}
@@ -125,5 +127,17 @@ defmodule Mississippi.Integration.Producer.Test do
     E2EMessageHandler.start_with_receiver(self())
 
     :ok
+  end
+
+  defp event_producer_pids(total_count) do
+    last_index = total_count - 1
+
+    0..last_index
+    |> Enum.map(&{&1, event_producer_pid(&1)})
+  end
+
+  def event_producer_pid(queue_index) do
+    Worker.via_tuple(queue_index)
+    |> GenServer.whereis()
   end
 end
