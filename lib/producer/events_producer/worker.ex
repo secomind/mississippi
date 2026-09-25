@@ -1,4 +1,4 @@
-# Copyright 2024 SECO Mind Srl
+# Copyright 2024 Clea Srl
 # SPDX-License-Identifier: Apache-2.0
 
 defmodule Mississippi.Producer.EventsProducer.Worker do
@@ -43,6 +43,17 @@ defmodule Mississippi.Producer.EventsProducer.Worker do
   @spec publish(pid() | tuple(), binary(), keyword()) :: :ok | {:error, term()} | Basic.error()
   def publish(server, payload, opts) do
     GenServer.call(server, {:publish, payload, opts})
+  end
+
+  @doc """
+  Gets the status of the AMQP channel linked to the worker (:up/:down).
+  """
+  def get_amqp_channel_status(server) do
+    GenServer.call(server, :get_amqp_channel_status)
+    # if the AMQP channel is down, the process may have restarted at this point
+  catch
+    :exit, _reason ->
+      :down
   end
 
   # Server callbacks
@@ -112,6 +123,13 @@ defmodule Mississippi.Producer.EventsProducer.Worker do
   end
 
   @impl true
+  def handle_call(:get_amqp_channel_status, _from, %State{channel: channel} = state) do
+    channel_status = if amqp_channel_up?(channel), do: :up, else: :down
+
+    {:reply, channel_status, state}
+  end
+
+  @impl true
   def handle_info(:init_producer, state), do: {:noreply, init_producer(state)}
 
   def handle_info({:EXIT, _from, {:name_conflict, {_key, _value}, _registry, _pid}}, state) do
@@ -127,6 +145,16 @@ defmodule Mississippi.Producer.EventsProducer.Worker do
   def handle_info({:EXIT, _from, reason}, state) do
     {:stop, reason, state}
   end
+
+  defp amqp_channel_up?(%AMQP.Channel{
+         pid: channel_pid,
+         conn: %AMQP.Connection{pid: connection_pid}
+       })
+       when is_pid(channel_pid) and is_pid(connection_pid) do
+    Process.alive?(channel_pid) and Process.alive?(connection_pid)
+  end
+
+  defp amqp_channel_up?(_channel), do: false
 
   defp init_producer(state) do
     %{connection: connection, queue_name: queue_name} = state
