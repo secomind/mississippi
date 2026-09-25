@@ -51,9 +51,7 @@ defmodule Mississippi.Consumer.ConsumersSupervisor do
        process_redistribution: :active,
        distribution_strategy: distribution_strategy},
       # This will make queue listeners start after re-sharding in a multi-node cluster
-      {NodeListener, queues_config},
-      # This will make queue listeners start in a single-node cluster
-      {AMQPDataConsumer.Starter, queues_config}
+      {NodeListener, queues_config}
     ]
 
     opts = [strategy: :rest_for_one]
