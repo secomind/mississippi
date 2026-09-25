@@ -3,7 +3,7 @@
 
 defmodule Mississippi.Consumer.AMQPDataConsumer.Starter do
   @moduledoc false
-  use Task, restart: :transient
+  use GenServer
 
   alias Horde.DynamicSupervisor
   alias Mississippi.Consumer.AMQPDataConsumer
@@ -13,10 +13,27 @@ defmodule Mississippi.Consumer.AMQPDataConsumer.Starter do
   @restart_backoff :timer.seconds(2)
 
   def start_link(queues_config) do
-    Task.start_link(__MODULE__, :start_consumers, [queues_config])
+    GenServer.start_link(__MODULE__, queues_config)
   end
 
-  def start_consumers(queues_config) do
+  @impl GenServer
+  def init(queues_config) do
+    with :ok <- do_start_consumers(queues_config) do
+      {:ok, queues_config}
+    end
+  end
+
+  def start_consumers(starter) do
+    GenServer.call(starter, :start_consumers)
+  end
+
+  @impl GenServer
+  def handle_call(:start_consumers, _from, queues_config) do
+    reply = do_start_consumers(queues_config)
+    {:reply, reply, queues_config}
+  end
+
+  defp do_start_consumers(queues_config) do
     start_consumers(queues_config, 10)
   end
 
