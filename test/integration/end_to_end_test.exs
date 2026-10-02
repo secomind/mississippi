@@ -35,8 +35,8 @@ defmodule Mississippi.EndToEnd.Test do
       ]
     ]
 
-    consumer = start_supervised!({Mississippi.Consumer, consumer_options})
     producer = start_supervised!({Mississippi.Producer, producer_options})
+    consumer = start_supervised!({Mississippi.Consumer, consumer_options})
 
     %{
       producer: producer,
