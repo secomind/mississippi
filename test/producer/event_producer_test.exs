@@ -18,7 +18,7 @@ defmodule Mississippi.Producer.EventsProducer.Test do
 
   @moduletag :unit
 
-  setup do
+  setup context do
     Hammox.set_mox_global()
     test_process = self()
 
@@ -28,19 +28,22 @@ defmodule Mississippi.Producer.EventsProducer.Test do
     |> stub(:init, fn _ -> {:ok, channel_fixture()} end)
     |> stub(:adapter, fn -> FakeConnectionAdapter end)
 
-    total_count = 8
+    total_queues_count = 8
+    worker_distribution_scope = Map.get(context, :worker_distribution_scope, :cluster)
 
     events_producer_supervisor_pid =
-      start_supervised!(events_producer_supervisor_fixture(total_count))
+      start_supervised!(
+        events_producer_supervisor_fixture(total_queues_count, worker_distribution_scope)
+      )
 
-    producers = event_producer_pids(total_count)
+    producers = event_producer_pids(total_queues_count)
 
     for {_id, pid} <- producers, do: :erlang.trace(pid, true, [:receive])
 
     %{
       events_producer_supervisor_pid: events_producer_supervisor_pid,
       producers: producers,
-      total_count: total_count
+      total_count: total_queues_count
     }
   end
 
@@ -170,6 +173,79 @@ defmodule Mississippi.Producer.EventsProducer.Test do
       assert {:error, :events_producer_uninitialized} ==
                EventsProducer.publish(valid_payload, sharding_key: 123)
     end
+
+    test "configures Horde to auto-discover available nodes in cluster distribution mode" do
+      init_args = [worker_distribution_scope: :cluster, queues: []]
+      {:ok, {_sup_flags, children_specs}} = ProducersSupervisor.init(init_args)
+
+      registry_spec = Enum.find(children_specs, fn spec -> spec.id == EventsProducer.Registry end)
+      supervisor_spec = Enum.find(children_specs, fn spec -> spec.id == Worker.Supervisor end)
+
+      node_listener_spec =
+        Enum.find(children_specs, fn spec -> spec.id == EventsProducer.NodeListener end)
+
+      {Horde.Registry, :start_link, [reg_opts]} = registry_spec.start
+      assert reg_opts[:members] == :auto
+
+      {Horde.DynamicSupervisor, :start_link, [sup_opts]} = supervisor_spec.start
+      assert sup_opts[:members] == :auto
+
+      {EventsProducer.NodeListener, :start_link, [listener_opts]} = node_listener_spec.start
+      assert listener_opts == [queues_config: [], worker_distribution_scope: :cluster]
+    end
+
+    test "configures Horde to use only the current node in local distribution mode" do
+      init_args = [worker_distribution_scope: :local, queues: []]
+      {:ok, {_sup_flags, children_specs}} = ProducersSupervisor.init(init_args)
+
+      registry_spec = Enum.find(children_specs, fn spec -> spec.id == EventsProducer.Registry end)
+      supervisor_spec = Enum.find(children_specs, fn spec -> spec.id == Worker.Supervisor end)
+
+      node_listener_spec =
+        Enum.find(children_specs, fn spec -> spec.id == EventsProducer.NodeListener end)
+
+      {Horde.Registry, :start_link, [reg_opts]} = registry_spec.start
+      assert reg_opts[:members] == [{EventsProducer.Registry, Node.self()}]
+
+      {Horde.DynamicSupervisor, :start_link, [sup_opts]} = supervisor_spec.start
+      assert sup_opts[:members] == [{Worker.Supervisor, Node.self()}]
+
+      {EventsProducer.NodeListener, :start_link, [listener_opts]} = node_listener_spec.start
+      assert listener_opts == [queues_config: [], worker_distribution_scope: :local]
+    end
+
+    test "default to cluster distribution mode when not specified in configuration" do
+      init_args = [queues: []]
+      {:ok, {_sup_flags, children_specs}} = ProducersSupervisor.init(init_args)
+
+      registry_spec = Enum.find(children_specs, fn spec -> spec.id == EventsProducer.Registry end)
+      {Horde.Registry, :start_link, [reg_opts]} = registry_spec.start
+      assert reg_opts[:members] == :auto
+    end
+  end
+
+  describe "with worker distribution scope == local" do
+    @describetag worker_distribution_scope: :local
+
+    test "one worker per queue is started, only on the local node", context do
+      for {_index, pid} <- context.producers do
+        assert node(pid) == Node.self()
+      end
+
+      children = Horde.DynamicSupervisor.which_children(Worker.Supervisor)
+      assert length(children) == context.total_count
+    end
+
+    test "messages are published to the correct shard worker", context do
+      %{total_count: total_count} = context
+      sharding_key = 43
+      expected_queue = "#{:erlang.phash2(sharding_key, total_count)}"
+      payload = "payload-#{System.unique_integer([:positive])}"
+      opts = [sharding_key: sharding_key]
+
+      assert :ok == EventsProducer.publish(payload, opts)
+      assert_receive {:published, _channel, ^expected_queue, ^payload}, 500
+    end
   end
 
   defp temporary_process do
@@ -198,13 +274,13 @@ defmodule Mississippi.Producer.EventsProducer.Test do
     [sharding_key: System.unique_integer()]
   end
 
-  defp events_producer_supervisor_fixture(total_count) do
+  defp events_producer_supervisor_fixture(total_count, worker_distribution_scope) do
     opts = [
+      worker_distribution_scope: worker_distribution_scope,
       queues: [
         total_count: total_count,
         ssl_options: [verify: :verify_none],
         events_exchange_name: "",
-        total_count: System.unique_integer([:positive]),
         connection: MockAMQPConnection,
         reconnection_backoff_ms: 0
       ]
