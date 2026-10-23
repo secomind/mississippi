@@ -17,7 +17,7 @@ defmodule Mississippi.Producer.Healthcheck.Test do
 
   @moduletag :unit
 
-  setup do
+  setup context do
     Hammox.set_mox_global()
     test_process = self()
 
@@ -27,18 +27,22 @@ defmodule Mississippi.Producer.Healthcheck.Test do
     |> stub(:init, fn _ -> {:ok, channel_fixture()} end)
     |> stub(:adapter, fn -> FakeConnectionAdapter end)
 
-    total_count = 2
+    total_queues_count = 2
+    worker_distribution_scope = Map.get(context, :worker_distribution_scope, :cluster)
 
-    start_supervised!(events_producer_supervisor_fixture(total_count))
+    start_supervised!(
+      events_producer_supervisor_fixture(total_queues_count, worker_distribution_scope)
+    )
 
-    producers = event_producer_pids(total_count)
+    producers = event_producer_pids(total_queues_count)
 
     for {_id, pid} <- producers, do: :erlang.trace(pid, true, [:receive])
 
     %{producers: producers}
   end
 
-  describe "check_all" do
+  describe "check_all in 'cluster' distribution mode" do
+    @describetag worker_distribution_scope: :cluster
     test "returns ok when all the workers are running and all the AMQP channels are up" do
       # setup ensures the workers and the AMQP channels are seen as running and functional
       assert Healthcheck.check_all() == :ok
@@ -91,6 +95,24 @@ defmodule Mississippi.Producer.Healthcheck.Test do
     end
   end
 
+  describe "check_all in 'local' distribution mode" do
+    @describetag worker_distribution_scope: :local
+
+    test "returns ok when all the workers are running and all the AMQP channels are up" do
+      # setup ensures the workers and the AMQP channels are seen as running and functional
+      assert Healthcheck.check_all() == :ok
+    end
+
+    test "returns error when not all the expected workers are running", %{producers: producers} do
+      [{0, producer_pid_0} | _] = producers
+
+      # kill (only) one worker and have it not restarted by supervisor
+      :ok = DynamicSupervisor.terminate_child(Worker.Supervisor, producer_pid_0)
+
+      assert Healthcheck.check_all() == {:error, [:workers_count_mismatch]}
+    end
+  end
+
   defp temporary_process do
     spawn(fn ->
       receive do
@@ -109,16 +131,18 @@ defmodule Mississippi.Producer.Healthcheck.Test do
     }
   end
 
-  defp events_producer_supervisor_fixture(total_count) do
-    opts = [
-      queues: [
-        total_count: total_count,
-        ssl_options: [verify: :verify_none],
-        events_exchange_name: "",
-        connection: MockAMQPConnection,
-        reconnection_backoff_ms: 0
+  defp events_producer_supervisor_fixture(total_count, worker_distribution_scope) do
+    opts =
+      [
+        worker_distribution_scope: worker_distribution_scope,
+        queues: [
+          total_count: total_count,
+          ssl_options: [verify: :verify_none],
+          events_exchange_name: "",
+          connection: MockAMQPConnection,
+          reconnection_backoff_ms: 0
+        ]
       ]
-    ]
 
     {ProducersSupervisor, opts}
   end

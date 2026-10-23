@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.
 ### Added
 - Allow configuring the `fullsweep_after` process flag on AMQPDataConsumer processes via the
   `:fullsweep_after` queue option, to avoid accumulating uncollected binaries across many minor garbage collections before a full sweep runs. Defaults to 20.
+- Allow tuning the distribution of the EventsProducer workers across the available nodes.
+  The new option `worker_distribution_scope` can be set to:
+  - `local`: the workers handling the incoming messages are located on the same node receiving them;
+    guaranteed per-producer in-order delivery 
+  - `cluster` (default option): the workers handling the incoming messages are distributed across
+    the whole cluster of nodes; guaranteed per-queue in-order delivery
 
 ## [1.0.0] - 2025-02-07
 ### Added
