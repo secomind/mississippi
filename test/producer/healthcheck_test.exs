@@ -19,7 +19,7 @@ defmodule Mississippi.Producer.Healthcheck.Test do
 
   setup :set_mimic_global
 
-  setup do
+  setup context do
     prefix = "mississippi_test_#{System.unique_integer()}_"
     exchange_name = "mississippi_#{System.unique_integer([:positive])}"
 
@@ -28,24 +28,32 @@ defmodule Mississippi.Producer.Healthcheck.Test do
 
     Queue |> stub(:declare, fn _, _, _ -> {:ok, nil} end)
 
-    total_count = 2
+    total_queues_count = 2
+    worker_distribution_scope = Map.get(context, :worker_distribution_scope, :cluster)
 
     producer_options = [
       amqp_producer_options: [host: "localhost"],
       mississippi_config: [
-        queues: [events_exchange_name: exchange_name, total_count: total_count, prefix: prefix]
+        worker_distribution_scope: worker_distribution_scope,
+        queues: [
+          events_exchange_name: exchange_name,
+          total_count: total_queues_count,
+          prefix: prefix
+        ]
       ]
     ]
 
     start_supervised!({Mississippi.Producer, producer_options})
-    producers = event_producer_pids(total_count)
+
+    producers = event_producer_pids(total_queues_count)
 
     for {_id, pid} <- producers, do: :erlang.trace(pid, true, [:receive])
 
     %{producers: producers}
   end
 
-  describe "check_all" do
+  describe "check_all in 'cluster' distribution mode" do
+    @describetag worker_distribution_scope: :cluster
     test "returns ok when all the workers are running and all the AMQP channels are up" do
       # setup ensures the workers and the AMQP channels are seen as running and functional
       assert Healthcheck.check_all() == :ok
@@ -97,6 +105,24 @@ defmodule Mississippi.Producer.Healthcheck.Test do
       end)
 
       assert Healthcheck.check_all() == {:error, [:events_producer_uninitialized]}
+    end
+  end
+
+  describe "check_all in 'local' distribution mode" do
+    @describetag worker_distribution_scope: :local
+
+    test "returns ok when all the workers are running and all the AMQP channels are up" do
+      # setup ensures the workers and the AMQP channels are seen as running and functional
+      assert Healthcheck.check_all() == :ok
+    end
+
+    test "returns error when not all the expected workers are running", %{producers: producers} do
+      [{0, producer_pid_0} | _] = producers
+
+      # kill (only) one worker and have it not restarted by supervisor
+      :ok = DynamicSupervisor.terminate_child(Worker.Supervisor, producer_pid_0)
+
+      assert Healthcheck.check_all() == {:error, [:workers_count_mismatch]}
     end
   end
 

@@ -11,9 +11,16 @@ defmodule Mississippi.Producer.EventsProducer.NodeListener do
 
   def start_link(args), do: GenServer.start_link(__MODULE__, args)
 
-  def init(queues_config) do
+  def init(init_args) do
+    queues_config = Keyword.fetch!(init_args, :events_producer_opts)
+    worker_distribution_scope = Keyword.get(init_args, :worker_distribution_scope, :cluster)
+
     with {:ok, starter_pid} <- Starter.start_link(queues_config) do
-      :net_kernel.monitor_nodes(true, node_type: :visible)
+      if worker_distribution_scope == :cluster do
+        # listen and react to node topology changes only if in cluster mode
+        :net_kernel.monitor_nodes(true, node_type: :visible)
+      end
+
       {:ok, starter_pid}
     end
   end

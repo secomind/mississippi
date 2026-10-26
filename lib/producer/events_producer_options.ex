@@ -45,11 +45,25 @@ defmodule Mississippi.Producer.EventsProducer.Options do
               ]
             ]
           ],
+          worker_distribution_scope: [
+            type: {:in, [:local, :cluster]},
+            default: :cluster,
+            doc: """
+            The strategy to use for distributing EventsProducer workers across the nodes.
+            - 'local': the workers handling the incoming messages are located on the same node
+              receiving them. This may reduce delivery latency in multi-node clusters,
+              while keeping the guarantee about per-producer in-order delivery
+            - 'cluster': the workers handling the incoming messages are distributed across the
+              whole cluster of nodes. This allows for global per-queue in-order delivery, potentially
+              increasing latency to account for message forwarding between nodes
+            """
+          ],
           cluster_distribution_strategy: [
             type: {:in, [:uniform_quorum, :uniform_random, :uniform]},
             default: :uniform_quorum,
             doc: """
             The strategy to use for redistributing producer processes within the cluster.
+            Ignored when the distribution scope is 'local'.
             """
           ]
         ]
